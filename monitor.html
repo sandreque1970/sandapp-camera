@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitor de Segurança</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { background: #111; color: #fff; font-family: sans-serif; text-align: center; padding: 20px; }
+        video { width: 100%; max-width: 640px; background: #000; border: 2px solid #444; border-radius: 8px; }
+        .status { margin-top: 15px; color: #aaa; }
+    </style>
+</head>
+<body>
+    <h2>Ao Vivo - Câmera</h2>
+    <video id="remoteVideo" autoplay playsinline controls></video>
+    <div class="status" id="status">Aguardando câmera...</div>
+
+    <script>
+        const socket = io();
+        const ROOM_ID = 'minha-casa-segura';
+        const remoteVideo = document.getElementById('remoteVideo');
+        const statusDiv = document.getElementById('status');
+
+        const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+        const peerConnection = new RTCPeerConnection(config);
+
+        peerConnection.ontrack = (event) => {
+            remoteVideo.srcObject = event.streams[0];
+            statusDiv.innerText = " Transmissão On-line!";
+            statusDiv.style.color = "#55ff55";
+        };
+
+        peerConnection.onicecandidate = (event) => {
+            if (event.candidate) socket.emit('candidate', { room: ROOM_ID, candidate: event.candidate });
+        };
+
+        socket.emit('join-room', ROOM_ID);
+
+        socket.on('offer', async (offer) => {
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            socket.emit('answer', { room: ROOM_ID, answer: answer });
+        });
+
+        socket.on('candidate', async (candidate) => {
+            await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        });
+    </script>
+</body>
+</html>

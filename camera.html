@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Câmera - Emissor</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { background: #000; color: #fff; font-family: sans-serif; text-align: center; padding: 20px; }
+        video { width: 100%; max-width: 320px; background: #222; border-radius: 8px; }
+        .status { margin-top: 15px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h2>Câmera Ativa</h2>
+    <video id="preview" autoplay playsinline muted></video>
+    <canvas id="motionCanvas" width="160" height="120" style="display:none;"></canvas>
+    <div class="status" id="statusLog">Iniciando...</div>
+
+    <script>
+        const socket = io();
+        const ROOM_ID = 'minha-casa-segura';
+        const video = document.getElementById('preview');
+        const canvas = document.getElementById('motionCanvas');
+        const ctx = canvas.getContext('2d');
+        const statusLog = document.getElementById('statusLog');
+
+        const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+        let peerConnection;
+        let localStream;
+        let prevFrame = null;
+
+        async function startCamera() {
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: { ideal: "environment" }, width: { ideal: 640 }, frameRate: { ideal: 15 } },
+                    audio: false
+                });
+                video.srcObject = localStream;
+                statusLog.innerText = "Aguardando monitor se conectar...";
+                
+                socket.emit('join-room', ROOM_ID);
+                setInterval(detectMotion, 300);
+            } catch (err) {
+                statusLog.innerText = "Erro ao acessar câmera: " + err.message;
+            }
+        }
+
+        function createPeer() {
+            peerConnection = new RTCPeerConnection(config);
+            localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+            peerConnection.onicecandidate = (e) => {
+                if (e.candidate) socket.emit('candidate', { room: ROOM_ID, candidate: e.candidate });
+            };
+
+            return peerConnection;
+        }
+
+        socket.on('user-connected', async () => {
+            const pc = createPeer();
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            socket.emit('offer', { room: ROOM_ID, offer: offer });
+            statusLog.innerText = "Conectando ao monitor...";
+        });
+
+        socket.on('answer', async (answer) => {
+            if (peerConnection) await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+            statusLog.innerText = "Transmissão ao vivo estabelecida!";
+        });
+
+        socket.on('candidate', async (candidate) => {
+            if (peerConnection) await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        });
+
+        function detectMotion() {
+            if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const currentFrame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            
+            if (prevFrame) {
+                let diffCount = 0;
+                for (let i = 0; i < currentFrame.data.length; i += 4) {
+                    const diff = Math.abs(currentFrame.data[i] - prevFrame.data[i]);
+                    if (diff > 30) diffCount++;
+                }
+                if (diffCount > 500) {
+                    statusLog.style.color = '#ff5555';
+                    statusLog.innerText = "⚠️ Movimento Detectado!";
+                } else {
+                    statusLog.style.color = '#55ff55';
+                }
+            }
+            prevFrame = currentFrame;
+        }
+
+        startCamera();
+    </script>
+</body>
+</html>
