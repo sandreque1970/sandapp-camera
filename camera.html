@@ -7,7 +7,7 @@
     <script src="/socket.io/socket.io.js"></script>
     <style>
         body { background: #000; color: #fff; font-family: sans-serif; text-align: center; padding: 20px; }
-        video { width: 100%; max-width: 320px; background: #222; border-radius: 8px; }
+        video { width: 100%; max-width: 320px; background: #222; border-radius: 8px; transform: scaleX(1); }
         .status { margin-top: 15px; font-weight: bold; }
     </style>
 </head>
@@ -32,12 +32,14 @@
 
         async function startCamera() {
             try {
+                // Configuração simplificada de captura de câmera para ampla compatibilidade
                 localStream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: { ideal: "environment" }, width: { ideal: 640 }, frameRate: { ideal: 15 } },
+                    video: true,
                     audio: false
                 });
                 video.srcObject = localStream;
-                statusLog.innerText = "Aguardando monitor se conectar...";
+                await video.play();
+                statusLog.innerText = "Câmera pronta! Aguardando monitor...";
                 
                 socket.emit('join-room', ROOM_ID);
                 setInterval(detectMotion, 300);
@@ -57,13 +59,17 @@
             return peerConnection;
         }
 
-        socket.on('user-connected', async () => {
+        socket.on('user-connected', () => {
+            sendOffer();
+        });
+
+        async function sendOffer() {
             const pc = createPeer();
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
             socket.emit('offer', { room: ROOM_ID, offer: offer });
-            statusLog.innerText = "Conectando ao monitor...";
-        });
+            statusLog.innerText = "Transmitindo para o monitor...";
+        }
 
         socket.on('answer', async (answer) => {
             if (peerConnection) await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
@@ -87,7 +93,7 @@
                 }
                 if (diffCount > 500) {
                     statusLog.style.color = '#ff5555';
-                    statusLog.innerText = "⚠️ Movimento Detectado!";
+                    statusLog.innerText = "⚠ Movimento Detectado!";
                 } else {
                     statusLog.style.color = '#55ff55';
                 }
