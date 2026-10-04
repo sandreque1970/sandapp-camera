@@ -3,19 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Câmera - Emissor</title>
+    <title>Câmera - Multi-Monitor com Controles</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
         body { background: #000; color: #fff; font-family: sans-serif; text-align: center; padding: 20px; }
-        video { width: 100%; max-width: 320px; background: #222; border-radius: 8px; transform: scaleX(1); }
+        video { width: 100%; max-width: 320px; background: #222; border-radius: 8px; }
         .status { margin-top: 15px; font-weight: bold; }
+        .monitors-count { margin-top: 10px; color: #00d2ff; }
+        .controls { margin-top: 15px; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+        button { padding: 10px 15px; border-radius: 6px; border: none; background: #333; color: #fff; font-size: 14px; cursor: pointer; }
+        button:hover { background: #555; }
+        button.active { background: #ff9800; color: #000; font-weight: bold; }
     </style>
 </head>
 <body>
     <h2>Câmera Ativa</h2>
     <video id="preview" autoplay playsinline muted></video>
     <canvas id="motionCanvas" width="160" height="120" style="display:none;"></canvas>
+    
+    <div class="controls">
+        <button id="btnFlip" onclick="toggleCamera()">🔄 Alternar Câmera</button>
+        <button id="btnTorch" onclick="toggleTorch()">🔦 Lanterna: OFF</button>
+    </div>
+
     <div class="status" id="statusLog">Iniciando...</div>
+    <div class="monitors-count" id="monitorCount">Monitores conectados: 0</div>
 
     <script>
         const socket = io();
@@ -24,60 +36,150 @@
         const canvas = document.getElementById('motionCanvas');
         const ctx = canvas.getContext('2d');
         const statusLog = document.getElementById('statusLog');
+        const monitorCountDiv = document.getElementById('monitorCount');
+        const btnTorch = document.getElementById('btnTorch');
 
         const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
-        let peerConnection;
-        let localStream;
+        const peers = {}; 
+        let localStream = null;
         let prevFrame = null;
+        let currentFacingMode = "environment"; // "environment" = traseira, "user" = frontal
+        let torchOn = false;
 
         async function startCamera() {
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+            }
+
             try {
-                // Configuração simplificada de captura de câmera para ampla compatibilidade
                 localStream = await navigator.mediaDevices.getUserMedia({
-                    video: true,
+                    video: { facingMode: { exact: currentFacingMode } },
                     audio: false
+                }).catch(async () => {
+                    // Fallback caso o navegador não aceite modo exato
+                    return await navigator.mediaDevices.getUserMedia({
+                        video: { facingMode: currentFacingMode },
+                        audio: false
+                    });
                 });
+
                 video.srcObject = localStream;
                 await video.play();
-                statusLog.innerText = "Câmera pronta! Aguardando monitor...";
-                
-                socket.emit('join-room', ROOM_ID);
-                setInterval(detectMotion, 300);
+                torchOn = false;
+                btnTorch.classList.remove('active');
+                btnTorch.innerText = "🔦 Lanterna: OFF";
+
+                // Atualizar o track de vídeo em todas as conexões P2P ativas
+                const newTrack = localStream.getVideoTracks()[0];
+                for (let socketId in peers) {
+                    const pc = peers[socketId];
+                    const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+                    if (sender) {
+                        sender.replaceTrack(newTrack);
+                    }
+                }
+
+                statusLog.innerText = `Câmera (${currentFacingMode === 'environment' ? 'Traseira' : 'Frontal'}) pronta!`;
             } catch (err) {
                 statusLog.innerText = "Erro ao acessar câmera: " + err.message;
             }
         }
 
-        function createPeer() {
-            peerConnection = new RTCPeerConnection(config);
-            localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+        async function toggleCamera() {
+            currentFacingMode = (currentFacingMode === "environment") ? "user" : "environment";
+            await startCamera();
+        }
 
-            peerConnection.onicecandidate = (e) => {
-                if (e.candidate) socket.emit('candidate', { room: ROOM_ID, candidate: e.candidate });
+        async function toggleTorch() {
+            if (!localStream) return;
+            const track = localStream.getVideoTracks()[0];
+            const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+
+            if (!capabilities.torch) {
+                alert("Lanterna/Flash não suportado neste navegador ou câmera.");
+                return;
+            }
+
+            try {
+                torchOn = !torchOn;
+                await track.applyConstraints({
+                    advanced: [{ torch: torchOn }]
+                });
+                if (torchOn) {
+                    btnTorch.classList.add('active');
+                    btnTorch.innerText = "🔦 Lanterna: ON";
+                } else {
+                    btnTorch.classList.remove('active');
+                    btnTorch.innerText = "🔦 Lanterna: OFF";
+                }
+            } catch (e) {
+                alert("Erro ao alternar lanterna: " + e.message);
+            }
+        }
+
+        function createPeerForMonitor(monitorSocketId) {
+            const pc = new RTCPeerConnection(config);
+            peers[monitorSocketId] = pc;
+
+            if (localStream) {
+                localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+            }
+
+            pc.onicecandidate = (e) => {
+                if (e.candidate) {
+                    socket.emit('candidate', { 
+                        room: ROOM_ID, 
+                        candidate: e.candidate,
+                        targetId: monitorSocketId 
+                    });
+                }
             };
 
-            return peerConnection;
+            pc.onconnectionstatechange = () => {
+                if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+                    delete peers[monitorSocketId];
+                    updateMonitorCount();
+                }
+            };
+
+            updateMonitorCount();
+            return pc;
         }
 
-        socket.on('user-connected', () => {
-            sendOffer();
-        });
+        function updateMonitorCount() {
+            const count = Object.keys(peers).length;
+            monitorCountDiv.innerText = `Monitores conectados: ${count}`;
+        }
 
-        async function sendOffer() {
-            const pc = createPeer();
+        socket.emit('join-room', ROOM_ID);
+
+        socket.on('user-connected', async (monitorSocketId) => {
+            const pc = createPeerForMonitor(monitorSocketId);
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
-            socket.emit('offer', { room: ROOM_ID, offer: offer });
-            statusLog.innerText = "Transmitindo para o monitor...";
-        }
-
-        socket.on('answer', async (answer) => {
-            if (peerConnection) await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-            statusLog.innerText = "Transmissão ao vivo estabelecida!";
+            
+            socket.emit('offer', { 
+                room: ROOM_ID, 
+                offer: offer, 
+                targetId: monitorSocketId 
+            });
+            
+            statusLog.innerText = "Transmitindo para novos monitores...";
         });
 
-        socket.on('candidate', async (candidate) => {
-            if (peerConnection) await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        socket.on('answer', async (data) => {
+            const pc = peers[data.senderId];
+            if (pc) {
+                await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+                statusLog.innerText = "Transmissão ativa!";
+            }
+        });
+
+        socket.on('candidate', async (data) => {
+            const pc = peers[data.senderId];
+            if (pc && data.candidate) {
+                await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+            }
         });
 
         function detectMotion() {
@@ -102,6 +204,7 @@
         }
 
         startCamera();
+        setInterval(detectMotion, 300);
     </script>
 </body>
 </html>
