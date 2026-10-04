@@ -11,8 +11,11 @@
         .status { margin-top: 15px; color: #aaa; }
         #lockScreen { margin-top: 50px; }
         input { padding: 10px; border-radius: 5px; border: 1px solid #444; background: #222; color: #fff; text-align: center; font-size: 16px; }
-        button { padding: 10px 20px; border-radius: 5px; border: none; background: #008cba; color: #fff; font-size: 16px; cursor: pointer; margin-left: 5px; }
-        button:hover { background: #005f73; }
+        .btn { padding: 10px 20px; border-radius: 5px; border: none; background: #008cba; color: #fff; font-size: 16px; cursor: pointer; margin: 5px; }
+        .btn:hover { background: #005f73; }
+        .controls-remote { margin-top: 15px; display: none; justify-content: center; gap: 10px; flex-wrap: wrap; }
+        .btn-ctrl { padding: 12px 20px; border-radius: 6px; border: none; background: #ff9800; color: #000; font-size: 16px; font-weight: bold; cursor: pointer; }
+        .btn-ctrl:active { background: #e68a00; }
     </style>
 </head>
 <body>
@@ -22,22 +25,30 @@
     <div id="lockScreen">
         <p>Digite a senha para acessar o monitor:</p>
         <input type="password" id="passInput" placeholder="Senha">
-        <button onclick="checkPassword()">Acessar</button>
+        <button class="btn" onclick="checkPassword()">Acessar</button>
         <p id="errorMsg" style="color: #ff5555; display: none; margin-top: 10px;">Senha incorreta!</p>
     </div>
 
     <!-- Player de Vídeo -->
     <video id="remoteVideo" autoplay playsinline muted controls></video>
+    
+    <!-- Controles Remotos da Câmera -->
+    <div class="controls-remote" id="remoteControls">
+        <button class="btn-ctrl" onclick="sendControl('toggle-camera')">🔄 Alternar Câmera</button>
+        <button class="btn-ctrl" onclick="sendControl('toggle-torch')">🔦 Alternar Lanterna</button>
+    </div>
+
     <div class="status" id="status" style="display: none;">Aguardando câmera...</div>
 
     <script>
-        const SENHA_CORRETA = "Rupert"; // Altere sua senha se desejar
+        const SENHA_CORRETA = "1234";
 
         const socket = io();
         const ROOM_ID = 'minha-casa-segura';
         const remoteVideo = document.getElementById('remoteVideo');
         const statusDiv = document.getElementById('status');
         const lockScreen = document.getElementById('lockScreen');
+        const remoteControls = document.getElementById('remoteControls');
         const errorMsg = document.getElementById('errorMsg');
 
         function checkPassword() {
@@ -45,11 +56,16 @@
             if (inputVal === SENHA_CORRETA) {
                 lockScreen.style.display = 'none';
                 remoteVideo.style.display = 'inline-block';
+                remoteControls.style.display = 'flex';
                 statusDiv.style.display = 'block';
                 initMonitor();
             } else {
                 errorMsg.style.display = 'block';
             }
+        }
+
+        function sendControl(action) {
+            socket.emit('camera-control', { room: ROOM_ID, action: action });
         }
 
         function initMonitor() {
