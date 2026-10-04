@@ -43,7 +43,7 @@
         const peers = {}; 
         let localStream = null;
         let prevFrame = null;
-        let currentFacingMode = "environment"; // "environment" = traseira, "user" = frontal
+        let currentFacingMode = "environment";
         let torchOn = false;
 
         async function startCamera() {
@@ -56,7 +56,6 @@
                     video: { facingMode: { exact: currentFacingMode } },
                     audio: false
                 }).catch(async () => {
-                    // Fallback caso o navegador não aceite modo exato
                     return await navigator.mediaDevices.getUserMedia({
                         video: { facingMode: currentFacingMode },
                         audio: false
@@ -69,7 +68,6 @@
                 btnTorch.classList.remove('active');
                 btnTorch.innerText = "🔦 Lanterna: OFF";
 
-                // Atualizar o track de vídeo em todas as conexões P2P ativas
                 const newTrack = localStream.getVideoTracks()[0];
                 for (let socketId in peers) {
                     const pc = peers[socketId];
@@ -96,7 +94,6 @@
             const capabilities = track.getCapabilities ? track.getCapabilities() : {};
 
             if (!capabilities.torch) {
-                alert("Lanterna/Flash não suportado neste navegador ou câmera.");
                 return;
             }
 
@@ -113,9 +110,18 @@
                     btnTorch.innerText = "🔦 Lanterna: OFF";
                 }
             } catch (e) {
-                alert("Erro ao alternar lanterna: " + e.message);
+                console.log("Erro na lanterna: " + e.message);
             }
         }
+
+        // Ouvir comandos vindos dos monitores
+        socket.on('camera-control', (action) => {
+            if (action === 'toggle-camera') {
+                toggleCamera();
+            } else if (action === 'toggle-torch') {
+                toggleTorch();
+            }
+        });
 
         function createPeerForMonitor(monitorSocketId) {
             const pc = new RTCPeerConnection(config);
