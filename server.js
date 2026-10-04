@@ -6,25 +6,38 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
-// Serve os arquivos HTML estáticos da pasta
 app.use(express.static(__dirname));
 
 io.on('connection', (socket) => {
     socket.on('join-room', (roomId) => {
         socket.join(roomId);
+        // Notifica a câmera de que este Socket ID se conectou
         socket.to(roomId).emit('user-connected', socket.id);
     });
 
     socket.on('offer', (data) => {
-        socket.to(data.room).emit('offer', data.offer);
+        if (data.targetId) {
+            // Envia a oferta para um monitor específico
+            io.to(data.targetId).emit('offer', { offer: data.offer, senderId: socket.id });
+        } else {
+            socket.to(data.room).emit('offer', { offer: data.offer, senderId: socket.id });
+        }
     });
 
     socket.on('answer', (data) => {
-        socket.to(data.room).emit('answer', data.answer);
+        if (data.targetId) {
+            io.to(data.targetId).emit('answer', { answer: data.answer, senderId: socket.id });
+        } else {
+            socket.to(data.room).emit('answer', { answer: data.answer, senderId: socket.id });
+        }
     });
 
     socket.on('candidate', (data) => {
-        socket.to(data.room).emit('candidate', data.candidate);
+        if (data.targetId) {
+            io.to(data.targetId).emit('candidate', { candidate: data.candidate, senderId: socket.id });
+        } else {
+            socket.to(data.room).emit('candidate', { candidate: data.candidate, senderId: socket.id });
+        }
     });
 });
 
