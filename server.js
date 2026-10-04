@@ -11,13 +11,12 @@ app.use(express.static(__dirname));
 io.on('connection', (socket) => {
     socket.on('join-room', (roomId) => {
         socket.join(roomId);
-        // Notifica a câmera de que este Socket ID se conectou
+        // Notifica a câmera enviando o ID exato deste monitor
         socket.to(roomId).emit('user-connected', socket.id);
     });
 
     socket.on('offer', (data) => {
         if (data.targetId) {
-            // Envia a oferta para um monitor específico
             io.to(data.targetId).emit('offer', { offer: data.offer, senderId: socket.id });
         } else {
             socket.to(data.room).emit('offer', { offer: data.offer, senderId: socket.id });
