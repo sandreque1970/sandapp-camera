@@ -11,7 +11,6 @@ app.use(express.static(__dirname));
 io.on('connection', (socket) => {
     socket.on('join-room', (roomId) => {
         socket.join(roomId);
-        // Notifica a câmera enviando o ID exato deste monitor
         socket.to(roomId).emit('user-connected', socket.id);
     });
 
@@ -37,6 +36,11 @@ io.on('connection', (socket) => {
         } else {
             socket.to(data.room).emit('candidate', { candidate: data.candidate, senderId: socket.id });
         }
+    });
+
+    // Encaminha comandos remotos para a câmera na sala
+    socket.on('camera-control', (data) => {
+        socket.to(data.room).emit('camera-control', data.action);
     });
 });
 
