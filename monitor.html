@@ -7,56 +7,89 @@
     <script src="/socket.io/socket.io.js"></script>
     <style>
         body { background: #111; color: #fff; font-family: sans-serif; text-align: center; padding: 20px; }
-        video { width: 100%; max-width: 640px; background: #000; border: 2px solid #444; border-radius: 8px; }
+        video { width: 100%; max-width: 640px; background: #000; border: 2px solid #444; border-radius: 8px; display: none; }
         .status { margin-top: 15px; color: #aaa; }
+        #lockScreen { margin-top: 50px; }
+        input { padding: 10px; border-radius: 5px; border: 1px solid #444; background: #222; color: #fff; text-align: center; font-size: 16px; }
+        button { padding: 10px 20px; border-radius: 5px; border: none; background: #008cba; color: #fff; font-size: 16px; cursor: pointer; margin-left: 5px; }
+        button:hover { background: #005f73; }
     </style>
 </head>
 <body>
     <h2>Ao Vivo - Câmera</h2>
+
+    <!-- Tela de Autenticação -->
+    <div id="lockScreen">
+        <p>Digite a senha para acessar o monitor:</p>
+        <input type="password" id="passInput" placeholder="Senha">
+        <button onclick="checkPassword()">Acessar</button>
+        <p id="errorMsg" style="color: #ff5555; display: none; margin-top: 10px;">Senha incorreta!</p>
+    </div>
+
+    <!-- Player de Vídeo (Oculto até autenticar) -->
     <video id="remoteVideo" autoplay playsinline muted controls></video>
-    <div class="status" id="status">Aguardando câmera...</div>
+    <div class="status" id="status" style="display: none;">Aguardando câmera...</div>
 
     <script>
+        // === DEFINA A SUA SENHA AQUI ===
+        const SENHA_CORRETA = "1234"; 
+
         const socket = io();
         const ROOM_ID = 'minha-casa-segura';
         const remoteVideo = document.getElementById('remoteVideo');
         const statusDiv = document.getElementById('status');
+        const lockScreen = document.getElementById('lockScreen');
+        const errorMsg = document.getElementById('errorMsg');
 
-        const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
-        let peerConnection;
-
-        function createPeer() {
-            peerConnection = new RTCPeerConnection(config);
-            
-            peerConnection.ontrack = (event) => {
-                remoteVideo.srcObject = event.streams[0];
-                remoteVideo.play().catch(e => console.log("Erro ao reproduzir:", e));
-                statusDiv.innerText = " Transmissão On-line!";
-                statusDiv.style.color = "#55ff55";
-            };
-
-            peerConnection.onicecandidate = (event) => {
-                if (event.candidate) socket.emit('candidate', { room: ROOM_ID, candidate: event.candidate });
-            };
-
-            return peerConnection;
+        function checkPassword() {
+            const inputVal = document.getElementById('passInput').value;
+            if (inputVal === SENHA_CORRETA) {
+                lockScreen.style.display = 'none';
+                remoteVideo.style.display = 'inline-block';
+                statusDiv.style.display = 'block';
+                initMonitor();
+            } else {
+                errorMsg.style.display = 'block';
+            }
         }
 
-        socket.emit('join-room', ROOM_ID);
+        function initMonitor() {
+            const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+            let peerConnection;
 
-        socket.on('offer', async (offer) => {
-            const pc = createPeer();
-            await pc.setRemoteDescription(new RTCSessionDescription(offer));
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-            socket.emit('answer', { room: ROOM_ID, answer: answer });
-        });
+            function createPeer() {
+                peerConnection = new RTCPeerConnection(config);
+                
+                peerConnection.ontrack = (event) => {
+                    remoteVideo.srcObject = event.streams[0];
+                    remoteVideo.play().catch(e => console.log("Erro ao reproduzir:", e));
+                    statusDiv.innerText = " Transmissão On-line!";
+                    statusDiv.style.color = "#55ff55";
+                };
 
-        socket.on('candidate', async (candidate) => {
-            if (peerConnection) {
-                await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+                peerConnection.onicecandidate = (event) => {
+                    if (event.candidate) socket.emit('candidate', { room: ROOM_ID, candidate: event.candidate });
+                };
+
+                return peerConnection;
             }
-        });
+
+            socket.emit('join-room', ROOM_ID);
+
+            socket.on('offer', async (offer) => {
+                const pc = createPeer();
+                await pc.setRemoteDescription(new RTCSessionDescription(offer));
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                socket.emit('answer', { room: ROOM_ID, answer: answer });
+            });
+
+            socket.on('candidate', async (candidate) => {
+                if (peerConnection) {
+                    await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+                }
+            });
+        }
     </script>
 </body>
 </html>
