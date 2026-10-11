@@ -14,7 +14,7 @@
         .btn { padding: 10px 20px; border-radius: 5px; border: none; background: #008cba; color: #fff; font-size: 16px; cursor: pointer; margin: 5px; }
         .btn:hover { background: #005f73; }
         .controls-remote { margin-top: 15px; display: none; justify-content: center; gap: 10px; flex-wrap: wrap; }
-        .btn-ctrl { padding: 12px 20px; border-radius: 6px; border: none; background: #ff9800; color: #000; font-size: 16px; font-weight: bold; cursor: pointer; }
+        .btn-ctrl { padding: 12px 20px; border-radius: 6px; border: none; background: #ff9800; color: #000; font-size: 16px; font-weight: bold; cursor: pointer; user-select: none; }
         .btn-ctrl:active { background: #e68a00; }
         .btn-mic { background: #4caf50; color: #fff; }
         .btn-mic.talking { background: #f44336; animation: pulse 1s infinite; }
@@ -47,8 +47,8 @@
     <!-- Controles Remotos -->
     <div class="controls-remote" id="remoteControls">
         <button class="btn-ctrl" onclick="sendControl('toggle-camera')">🔄 Alternar Câmera</button>
-        <button class="btn-ctrl" onclick="sendControl('toggle-torch')">🔦 Alternar Lanterna</button>
-        <button class="btn-ctrl btn-mic" id="btnMic" onmousedown="startTalking()" onmouseup="stopTalking()" ontouchstart="startTalking()" ontouchend="stopTalking()">🎤 Pressione para Falar</button>
+        <button class="btn-ctrl" onclick="sendControl('toggle-torch')">flashlight Alternar Lanterna</button>
+        <button class="btn-ctrl btn-mic" id="btnMic">🎤 Pressione para Falar</button>
     </div>
 
     <div class="status" id="status" style="display: none;">Selecione uma câmera acima...</div>
@@ -73,9 +73,21 @@
 
         const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
-        function checkPassword() {
+        async function initMicStream() {
+            try {
+                localMicStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                // Inicia mudo por padrão
+                localMicStream.getAudioTracks().forEach(track => track.enabled = false);
+            } catch (e) {
+                console.log("Microfone do monitor não disponível:", e.message);
+            }
+        }
+
+        async function checkPassword() {
             const inputVal = document.getElementById('passInput').value;
             if (inputVal === SENHA_CORRETA) {
+                await initMicStream();
+
                 lockScreen.style.display = 'none';
                 remoteVideo.style.display = 'inline-block';
                 remoteControls.style.display = 'flex';
@@ -120,7 +132,6 @@
                 peerConnection = null;
             }
 
-            // Solicita à câmera que envie a oferta WebRTC para este monitor
             socket.emit('request-offer', { targetCameraId: selectedCameraId });
         }
 
@@ -131,6 +142,13 @@
 
             peerConnection = new RTCPeerConnection(config);
             
+            // Adiciona a faixa do microfone local na conexão (mesmo que mutada inicialmente)
+            if (localMicStream) {
+                localMicStream.getTracks().forEach(track => {
+                    peerConnection.addTrack(track, localMicStream);
+                });
+            }
+
             peerConnection.ontrack = (event) => {
                 if (event.streams && event.streams[0]) {
                     remoteVideo.srcObject = event.streams[0];
@@ -167,7 +185,7 @@
 
         socket.on('candidate', async (data) => {
             if (peerConnection && data.candidate) {
-                await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(e => console.log(e));
+                await pc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(e => console.log(e));
             }
         });
 
@@ -179,40 +197,35 @@
             socket.emit('camera-control', { targetCameraId: selectedCameraId, action: action });
         }
 
-        async function startTalking() {
-            if (!peerConnection) {
-                alert("Conecte-se a uma câmera antes de falar!");
+        // --- Controles de Áudio (Push-to-Talk) ---
+        function startTalking(e) {
+            if (e) e.preventDefault();
+            if (!localMicStream) {
+                alert("Microfone indisponível ou permissão negada.");
                 return;
             }
-            try {
-                if (!localMicStream) {
-                    localMicStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-                }
-                const audioTrack = localMicStream.getAudioTracks()[0];
-                audioTrack.enabled = true;
-
-                const sender = peerConnection.getSenders().find(s => s.track && s.track.kind === 'audio');
-                if (sender) {
-                    sender.replaceTrack(audioTrack);
-                } else {
-                    peerConnection.addTrack(audioTrack, localMicStream);
-                }
-
-                btnMic.classList.add('talking');
-                btnMic.innerText = "🎙️ Falando...";
-            } catch (err) {
-                alert("Erro ao acessar o microfone do monitor: " + err.message);
-            }
+            localMicStream.getAudioTracks().forEach(track => track.enabled = true);
+            btnMic.classList.add('talking');
+            btnMic.innerText = "🎙️ Falando...";
         }
 
-        function stopTalking() {
+        function stopTalking(e) {
+            if (e) e.preventDefault();
             if (localMicStream) {
-                const audioTrack = localMicStream.getAudioTracks()[0];
-                if (audioTrack) audioTrack.enabled = false;
+                localMicStream.getAudioTracks().forEach(track => track.enabled = false);
             }
             btnMic.classList.remove('talking');
             btnMic.innerText = "🎤 Pressione para Falar";
         }
+
+        // Eventos para Mouse e Touchscreen (Celulares)
+        btnMic.addEventListener('mousedown', startTalking);
+        btnMic.addEventListener('mouseup', stopTalking);
+        btnMic.addEventListener('mouseleave', stopTalking);
+
+        btnMic.addEventListener('touchstart', startTalking);
+        btnMic.addEventListener('touchend', stopTalking);
+        btnMic.addEventListener('touchcancel', stopTalking);
     </script>
 </body>
 </html>
