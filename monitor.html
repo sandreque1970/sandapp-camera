@@ -3,23 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Monitor de Segurança</title>
+    <title>Central de Monitoramento com Áudio</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
         body { background: #111; color: #fff; font-family: sans-serif; text-align: center; padding: 20px; }
         video { width: 100%; max-width: 640px; background: #000; border: 2px solid #444; border-radius: 8px; display: none; }
         .status { margin-top: 15px; color: #aaa; }
         #lockScreen { margin-top: 50px; }
-        input { padding: 10px; border-radius: 5px; border: 1px solid #444; background: #222; color: #fff; text-align: center; font-size: 16px; }
+        input, select { padding: 10px; border-radius: 5px; border: 1px solid #444; background: #222; color: #fff; text-align: center; font-size: 16px; margin: 5px; }
         .btn { padding: 10px 20px; border-radius: 5px; border: none; background: #008cba; color: #fff; font-size: 16px; cursor: pointer; margin: 5px; }
         .btn:hover { background: #005f73; }
         .controls-remote { margin-top: 15px; display: none; justify-content: center; gap: 10px; flex-wrap: wrap; }
         .btn-ctrl { padding: 12px 20px; border-radius: 6px; border: none; background: #ff9800; color: #000; font-size: 16px; font-weight: bold; cursor: pointer; }
         .btn-ctrl:active { background: #e68a00; }
+        .btn-mic { background: #4caf50; color: #fff; }
+        .btn-mic.talking { background: #f44336; animation: pulse 1s infinite; }
+        .cam-selector { margin-bottom: 15px; display: none; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
     </style>
 </head>
 <body>
-    <h2>Ao Vivo - Câmera</h2>
+    <h2>Central de Monitoramento</h2>
 
     <!-- Tela de Autenticação -->
     <div id="lockScreen">
@@ -29,27 +33,43 @@
         <p id="errorMsg" style="color: #ff5555; display: none; margin-top: 10px;">Senha incorreta!</p>
     </div>
 
-    <!-- Player de Vídeo -->
-    <video id="remoteVideo" autoplay playsinline muted controls></video>
+    <!-- Seletor de Câmeras -->
+    <div class="cam-selector" id="camSelectorContainer">
+        <label for="cameraSelect">Selecione a Câmera: </label>
+        <select id="cameraSelect" onchange="connectToSelectedCamera()">
+            <option value="">Aguardando câmeras...</option>
+        </select>
+    </div>
+
+    <!-- Player de Vídeo (sem atributo 'muted' para permitir escutar a câmera) -->
+    <video id="remoteVideo" autoplay playsinline controls></video>
     
-    <!-- Controles Remotos da Câmera -->
+    <!-- Controles Remotos -->
     <div class="controls-remote" id="remoteControls">
         <button class="btn-ctrl" onclick="sendControl('toggle-camera')">🔄 Alternar Câmera</button>
         <button class="btn-ctrl" onclick="sendControl('toggle-torch')">🔦 Alternar Lanterna</button>
+        <button class="btn-ctrl btn-mic" id="btnMic" onmousedown="startTalking()" onmouseup="stopTalking()" ontouchstart="startTalking()" ontouchend="stopTalking()">🎤 Pressione para Falar</button>
     </div>
 
-    <div class="status" id="status" style="display: none;">Aguardando câmera...</div>
+    <div class="status" id="status" style="display: none;">Selecione uma câmera acima...</div>
 
     <script>
-        const SENHA_CORRETA = "Rupert";
+        const SENHA_CORRETA = "1234";
 
         const socket = io();
-        const ROOM_ID = 'minha-casa-segura';
         const remoteVideo = document.getElementById('remoteVideo');
         const statusDiv = document.getElementById('status');
         const lockScreen = document.getElementById('lockScreen');
         const remoteControls = document.getElementById('remoteControls');
+        const camSelectorContainer = document.getElementById('camSelectorContainer');
+        const cameraSelect = document.getElementById('cameraSelect');
         const errorMsg = document.getElementById('errorMsg');
+        const btnMic = document.getElementById('btnMic');
+
+        let activeCamerasList = {};
+        let selectedCameraId = null;
+        let peerConnection = null;
+        let localMicStream = null;
 
         function checkPassword() {
             const inputVal = document.getElementById('passInput').value;
@@ -57,66 +77,135 @@
                 lockScreen.style.display = 'none';
                 remoteVideo.style.display = 'inline-block';
                 remoteControls.style.display = 'flex';
+                camSelectorContainer.style.display = 'block';
                 statusDiv.style.display = 'block';
-                initMonitor();
+                
+                socket.emit('register-monitor');
             } else {
                 errorMsg.style.display = 'block';
             }
         }
 
-        function sendControl(action) {
-            socket.emit('camera-control', { room: ROOM_ID, action: action });
-        }
+        socket.on('update-camera-list', (cameras) => {
+            activeCamerasList = cameras;
+            cameraSelect.innerHTML = '<option value="">-- Selecione uma Câmera --</option>';
 
-        function initMonitor() {
-            const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
-            let peerConnection;
-
-            function createPeer(cameraSocketId) {
-                peerConnection = new RTCPeerConnection(config);
-                
-                peerConnection.ontrack = (event) => {
-                    remoteVideo.srcObject = event.streams[0];
-                    remoteVideo.play().catch(e => console.log("Erro ao reproduzir:", e));
-                    statusDiv.innerText = " Transmissão On-line!";
-                    statusDiv.style.color = "#55ff55";
-                };
-
-                peerConnection.onicecandidate = (event) => {
-                    if (event.candidate) {
-                        socket.emit('candidate', { 
-                            room: ROOM_ID, 
-                            candidate: event.candidate,
-                            targetId: cameraSocketId 
-                        });
-                    }
-                };
-
-                return peerConnection;
+            for (let id in cameras) {
+                const option = document.createElement('option');
+                option.value = id;
+                option.textContent = cameras[id];
+                if (id === selectedCameraId) option.selected = true;
+                cameraSelect.appendChild(option);
             }
 
-            socket.emit('join-room', ROOM_ID);
+            if (Object.keys(cameras).length === 0) {
+                statusDiv.innerText = "Nenhuma câmera online no momento.";
+            }
+        });
 
-            socket.on('offer', async (data) => {
-                const cameraSocketId = data.senderId;
-                const pc = createPeer(cameraSocketId);
-                await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
-                
-                socket.emit('answer', { 
-                    room: ROOM_ID, 
-                    answer: answer,
-                    targetId: cameraSocketId 
-                });
-            });
+        function connectToSelectedCamera() {
+            selectedCameraId = cameraSelect.value;
+            if (!selectedCameraId) {
+                statusDiv.innerText = "Selecione uma câmera acima.";
+                return;
+            }
 
-            socket.on('candidate', async (data) => {
-                if (peerConnection && data.candidate) {
-                    await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-                }
-            });
+            statusDiv.innerText = `Conectando a ${activeCamerasList[selectedCameraId]}...`;
+
+            if (peerConnection) {
+                peerConnection.close();
+                peerConnection = null;
+            }
+
+            socket.emit('offer', { targetId: selectedCameraId });
         }
+
+        function sendControl(action) {
+            if (!selectedCameraId) {
+                alert("Selecione uma câmera primeiro!");
+                return;
+            }
+            socket.emit('camera-control', { targetCameraId: selectedCameraId, action: action });
+        }
+
+        // --- Funções do Intercomunicador (Falar no Monitor) ---
+        async function startTalking() {
+            if (!peerConnection) {
+                alert("Conecte-se a uma câmera antes de falar!");
+                return;
+            }
+            try {
+                if (!localMicStream) {
+                    localMicStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                }
+                const audioTrack = localMicStream.getAudioTracks()[0];
+                audioTrack.enabled = true;
+
+                const sender = peerConnection.getSenders().find(s => s.track && s.track.kind === 'audio');
+                if (sender) {
+                    sender.replaceTrack(audioTrack);
+                } else {
+                    peerConnection.addTrack(audioTrack, localMicStream);
+                }
+
+                btnMic.classList.add('talking');
+                btnMic.innerText = "🎙️ Falando...";
+            } catch (err) {
+                alert("Erro ao acessar o microfone do monitor: " + err.message);
+            }
+        }
+
+        function stopTalking() {
+            if (localMicStream) {
+                const audioTrack = localMicStream.getAudioTracks()[0];
+                if (audioTrack) audioTrack.enabled = false;
+            }
+            btnMic.classList.remove('talking');
+            btnMic.innerText = "🎤 Pressione para Falar";
+        }
+
+        const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+        function createPeer(cameraSocketId) {
+            peerConnection = new RTCPeerConnection(config);
+            
+            peerConnection.ontrack = (event) => {
+                remoteVideo.srcObject = event.streams[0];
+                remoteVideo.play().catch(e => console.log("Erro ao reproduzir:", e));
+                statusDiv.innerText = `Transmissão On-line: ${activeCamerasList[cameraSocketId] || 'Câmera'}`;
+                statusDiv.style.color = "#55ff55";
+            };
+
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    socket.emit('candidate', { 
+                        candidate: event.candidate,
+                        targetId: cameraSocketId 
+                    });
+                }
+            };
+
+            return peerConnection;
+        }
+
+        socket.on('offer', async (data) => {
+            const cameraSocketId = data.senderId;
+            const pc = createPeer(cameraSocketId);
+            await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            
+            socket.emit('answer', { 
+                answer: answer,
+                targetId: cameraSocketId 
+            });
+        });
+
+        socket.on('candidate', async (data) => {
+            if (peerConnection && data.candidate) {
+                await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+            }
+        });
     </script>
 </body>
 </html>
