@@ -3,41 +3,51 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Câmera - Multi-Monitor com Controles</title>
+    <title>Câmera - Emissor Passivo com Áudio</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
         body { background: #000; color: #fff; font-family: sans-serif; text-align: center; padding: 20px; }
         video { width: 100%; max-width: 320px; background: #222; border-radius: 8px; }
+        audio { display: none; }
         .status { margin-top: 15px; font-weight: bold; }
-        .monitors-count { margin-top: 10px; color: #00d2ff; }
-        .controls { margin-top: 15px; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
-        button { padding: 10px 15px; border-radius: 6px; border: none; background: #333; color: #fff; font-size: 14px; cursor: pointer; }
-        button:hover { background: #555; }
-        button.active { background: #ff9800; color: #000; font-weight: bold; }
+        .info { margin-top: 10px; color: #00d2ff; }
+        .setup-box { margin-bottom: 15px; background: #222; padding: 15px; border-radius: 8px; display: inline-block; }
+        input { padding: 10px; border-radius: 5px; border: 1px solid #444; background: #111; color: #fff; text-align: center; font-size: 16px; margin-bottom: 10px; }
+        button { padding: 10px 20px; border-radius: 5px; border: none; background: #008cba; color: #fff; font-size: 16px; cursor: pointer; }
     </style>
 </head>
 <body>
-    <h2>Câmera Ativa</h2>
-    <video id="preview" autoplay playsinline muted></video>
-    <canvas id="motionCanvas" width="160" height="120" style="display:none;"></canvas>
-    
-    <div class="controls">
-        <button id="btnFlip" onclick="toggleCamera()">🔄 Alternar Câmera</button>
-        <button id="btnTorch" onclick="toggleTorch()">🔦 Lanterna: OFF</button>
+    <h2 id="camTitle">Identificação da Câmera</h2>
+
+    <!-- Formulário visível para escolher o nome do local -->
+    <div class="setup-box" id="nameBox">
+        <p style="margin-top:0;">Digite o local/nome desta câmera:</p>
+        <input type="text" id="camNameInput" placeholder="Ex: Sala, Garagem, Cozinha" value="Sala">
+        <br>
+        <button onclick="confirmCameraName()">Iniciar Transmissão</button>
     </div>
 
-    <div class="status" id="statusLog">Iniciando...</div>
-    <div class="monitors-count" id="monitorCount">Monitores conectados: 0</div>
+    <!-- Interface da Câmera (Inicia oculta) -->
+    <div id="camArea" style="display:none;">
+        <video id="preview" autoplay playsinline muted></video>
+        <audio id="remoteAudio" autoplay></audio>
+        <canvas id="motionCanvas" width="160" height="120" style="display:none;"></canvas>
+
+        <div class="status" id="statusLog">Iniciando...</div>
+        <div class="info" id="monitorCount">Monitores conectados: 0</div>
+    </div>
 
     <script>
         const socket = io();
-        const ROOM_ID = 'minha-casa-segura';
         const video = document.getElementById('preview');
+        const remoteAudio = document.getElementById('remoteAudio');
         const canvas = document.getElementById('motionCanvas');
         const ctx = canvas.getContext('2d');
         const statusLog = document.getElementById('statusLog');
         const monitorCountDiv = document.getElementById('monitorCount');
-        const btnTorch = document.getElementById('btnTorch');
+        const camTitle = document.getElementById('camTitle');
+        const nameBox = document.getElementById('nameBox');
+        const camArea = document.getElementById('camArea');
 
         const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
         const peers = {}; 
@@ -45,6 +55,23 @@
         let prevFrame = null;
         let currentFacingMode = "environment";
         let torchOn = false;
+        let cameraName = "Câmera";
+
+        async function confirmCameraName() {
+            const inputVal = document.getElementById('camNameInput').value.trim();
+            if (inputVal) {
+                cameraName = inputVal;
+            }
+            nameBox.style.display = 'none';
+            camArea.style.display = 'block';
+            camTitle.innerText = `Câmera: ${cameraName}`;
+
+            // Registra a câmera no servidor
+            socket.emit('register-camera', cameraName);
+
+            // Inicia os sensores da câmera e microfone
+            await startCamera();
+        }
 
         async function startCamera() {
             if (localStream) {
@@ -54,32 +81,33 @@
             try {
                 localStream = await navigator.mediaDevices.getUserMedia({
                     video: { facingMode: { exact: currentFacingMode } },
-                    audio: false
+                    audio: true
                 }).catch(async () => {
                     return await navigator.mediaDevices.getUserMedia({
                         video: { facingMode: currentFacingMode },
-                        audio: false
+                        audio: true
                     });
                 });
 
                 video.srcObject = localStream;
                 await video.play();
                 torchOn = false;
-                btnTorch.classList.remove('active');
-                btnTorch.innerText = "🔦 Lanterna: OFF";
 
-                const newTrack = localStream.getVideoTracks()[0];
                 for (let socketId in peers) {
                     const pc = peers[socketId];
-                    const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
-                    if (sender) {
-                        sender.replaceTrack(newTrack);
-                    }
+                    localStream.getTracks().forEach(track => {
+                        const sender = pc.getSenders().find(s => s.track && s.track.kind === track.kind);
+                        if (sender) {
+                            sender.replaceTrack(track);
+                        } else {
+                            pc.addTrack(track, localStream);
+                        }
+                    });
                 }
 
-                statusLog.innerText = `Câmera (${currentFacingMode === 'environment' ? 'Traseira' : 'Frontal'}) pronta!`;
+                statusLog.innerText = `Transmitindo ao vivo (${cameraName})...`;
             } catch (err) {
-                statusLog.innerText = "Erro ao acessar câmera: " + err.message;
+                statusLog.innerText = "Erro ao acessar câmera/microfone: " + err.message;
             }
         }
 
@@ -93,28 +121,18 @@
             const track = localStream.getVideoTracks()[0];
             const capabilities = track.getCapabilities ? track.getCapabilities() : {};
 
-            if (!capabilities.torch) {
-                return;
-            }
+            if (!capabilities.torch) return;
 
             try {
                 torchOn = !torchOn;
                 await track.applyConstraints({
                     advanced: [{ torch: torchOn }]
                 });
-                if (torchOn) {
-                    btnTorch.classList.add('active');
-                    btnTorch.innerText = "🔦 Lanterna: ON";
-                } else {
-                    btnTorch.classList.remove('active');
-                    btnTorch.innerText = "🔦 Lanterna: OFF";
-                }
             } catch (e) {
                 console.log("Erro na lanterna: " + e.message);
             }
         }
 
-        // Ouvir comandos vindos dos monitores
         socket.on('camera-control', (action) => {
             if (action === 'toggle-camera') {
                 toggleCamera();
@@ -131,10 +149,16 @@
                 localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
             }
 
+            pc.ontrack = (event) => {
+                if (event.track.kind === 'audio') {
+                    remoteAudio.srcObject = event.streams[0];
+                    remoteAudio.play().catch(e => console.log("Erro ao tocar áudio do monitor:", e));
+                }
+            };
+
             pc.onicecandidate = (e) => {
                 if (e.candidate) {
                     socket.emit('candidate', { 
-                        room: ROOM_ID, 
                         candidate: e.candidate,
                         targetId: monitorSocketId 
                     });
@@ -157,27 +181,21 @@
             monitorCountDiv.innerText = `Monitores conectados: ${count}`;
         }
 
-        socket.emit('join-room', ROOM_ID);
-
         socket.on('user-connected', async (monitorSocketId) => {
             const pc = createPeerForMonitor(monitorSocketId);
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
             
             socket.emit('offer', { 
-                room: ROOM_ID, 
                 offer: offer, 
                 targetId: monitorSocketId 
             });
-            
-            statusLog.innerText = "Transmitindo para novos monitores...";
         });
 
         socket.on('answer', async (data) => {
             const pc = peers[data.senderId];
             if (pc) {
                 await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-                statusLog.innerText = "Transmissão ativa!";
             }
         });
 
@@ -209,7 +227,6 @@
             prevFrame = currentFrame;
         }
 
-        startCamera();
         setInterval(detectMotion, 300);
     </script>
 </body>
