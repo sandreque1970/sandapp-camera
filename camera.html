@@ -49,13 +49,29 @@
         const nameBox = document.getElementById('nameBox');
         const camArea = document.getElementById('camArea');
 
-        const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
-        const peers = {}; 
-        let localStream = null;
-        let prevFrame = null;
-        let currentFacingMode = "environment";
-        let torchOn = false;
-        let cameraName = "Câmera";
+        // CÓDIGO ATUALIZADO COM TURN:
+const config = { 
+    iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        {
+            urls: 'turn:openrelay.metered.ca:80',
+            username: 'openrelay',
+            credential: 'openrelay'
+        },
+        {
+            urls: 'turn:openrelay.metered.ca:443',
+            username: 'openrelay',
+            credential: 'openrelay'
+        },
+        {
+            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+            username: 'openrelay',
+            credential: 'openrelay'
+        }
+    ] 
+};
+        
 
         async function confirmCameraName() {
             const inputVal = document.getElementById('camNameInput').value.trim();
