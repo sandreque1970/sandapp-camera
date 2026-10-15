@@ -47,7 +47,7 @@
     <!-- Controles Remotos -->
     <div class="controls-remote" id="remoteControls">
         <button class="btn-ctrl" onclick="sendControl('toggle-camera')">🔄 Alternar Câmera</button>
-        <button class="btn-ctrl" onclick="sendControl('toggle-torch')">flashlight Alternar Lanterna</button>
+        <button class="btn-ctrl" onclick="sendControl('toggle-torch')">🔦 Alternar Lanterna</button>
         <button class="btn-ctrl btn-mic" id="btnMic">🎤 Pressione para Falar</button>
     </div>
 
@@ -71,12 +71,32 @@
         let peerConnection = null;
         let localMicStream = null;
 
-        const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+        // Configuração dos Servidores STUN/TURN para atravessar Firewalls
+        const config = { 
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                {
+                    urls: 'turn:openrelay.metered.ca:80',
+                    username: 'openrelay',
+                    credential: 'openrelay'
+                },
+                {
+                    urls: 'turn:openrelay.metered.ca:443',
+                    username: 'openrelay',
+                    credential: 'openrelay'
+                },
+                {
+                    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+                    username: 'openrelay',
+                    credential: 'openrelay'
+                }
+            ] 
+        };
 
         async function initMicStream() {
             try {
                 localMicStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-                // Inicia mudo por padrão
                 localMicStream.getAudioTracks().forEach(track => track.enabled = false);
             } catch (e) {
                 console.log("Microfone do monitor não disponível:", e.message);
@@ -142,7 +162,6 @@
 
             peerConnection = new RTCPeerConnection(config);
             
-            // Adiciona a faixa do microfone local na conexão (mesmo que mutada inicialmente)
             if (localMicStream) {
                 localMicStream.getTracks().forEach(track => {
                     peerConnection.addTrack(track, localMicStream);
@@ -185,7 +204,7 @@
 
         socket.on('candidate', async (data) => {
             if (peerConnection && data.candidate) {
-                await pc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(e => console.log(e));
+                await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(e => console.log(e));
             }
         });
 
@@ -197,7 +216,7 @@
             socket.emit('camera-control', { targetCameraId: selectedCameraId, action: action });
         }
 
-        // --- Controles de Áudio (Push-to-Talk) ---
+        // Controls Push-to-Talk
         function startTalking(e) {
             if (e) e.preventDefault();
             if (!localMicStream) {
@@ -218,7 +237,6 @@
             btnMic.innerText = "🎤 Pressione para Falar";
         }
 
-        // Eventos para Mouse e Touchscreen (Celulares)
         btnMic.addEventListener('mousedown', startTalking);
         btnMic.addEventListener('mouseup', stopTalking);
         btnMic.addEventListener('mouseleave', stopTalking);
