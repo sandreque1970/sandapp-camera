@@ -49,29 +49,36 @@
         const nameBox = document.getElementById('nameBox');
         const camArea = document.getElementById('camArea');
 
-        // CÓDIGO ATUALIZADO COM TURN:
-const config = { 
-    iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        {
-            urls: 'turn:openrelay.metered.ca:80',
-            username: 'openrelay',
-            credential: 'openrelay'
-        },
-        {
-            urls: 'turn:openrelay.metered.ca:443',
-            username: 'openrelay',
-            credential: 'openrelay'
-        },
-        {
-            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-            username: 'openrelay',
-            credential: 'openrelay'
-        }
-    ] 
-};
-        
+        // Configuração dos Servidores STUN/TURN
+        const config = { 
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                {
+                    urls: 'turn:openrelay.metered.ca:80',
+                    username: 'openrelay',
+                    credential: 'openrelay'
+                },
+                {
+                    urls: 'turn:openrelay.metered.ca:443',
+                    username: 'openrelay',
+                    credential: 'openrelay'
+                },
+                {
+                    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+                    username: 'openrelay',
+                    credential: 'openrelay'
+                }
+            ] 
+        };
+
+        // Declaração das Variáveis do Sistema (RESTAURADAS)
+        const peers = {}; 
+        let localStream = null;
+        let prevFrame = null;
+        let currentFacingMode = "environment";
+        let torchOn = false;
+        let cameraName = "Câmera";
 
         async function confirmCameraName() {
             const inputVal = document.getElementById('camNameInput').value.trim();
@@ -95,6 +102,7 @@ const config = {
             }
 
             try {
+                // Tenta capturar vídeo + áudio
                 localStream = await navigator.mediaDevices.getUserMedia({
                     video: { facingMode: { exact: currentFacingMode } },
                     audio: true
@@ -104,27 +112,36 @@ const config = {
                         audio: true
                     });
                 });
-
-                video.srcObject = localStream;
-                await video.play();
-                torchOn = false;
-
-                for (let socketId in peers) {
-                    const pc = peers[socketId];
-                    localStream.getTracks().forEach(track => {
-                        const sender = pc.getSenders().find(s => s.track && s.track.kind === track.kind);
-                        if (sender) {
-                            sender.replaceTrack(track);
-                        } else {
-                            pc.addTrack(track, localStream);
-                        }
-                    });
-                }
-
-                statusLog.innerText = `Transmitindo ao vivo (${cameraName})...`;
             } catch (err) {
-                statusLog.innerText = "Erro ao acessar câmera/microfone: " + err.message;
+                // Fallback: se falhar o áudio (ex: dispositivo sem mic), tenta apenas vídeo
+                try {
+                    localStream = await navigator.mediaDevices.getUserMedia({
+                        video: { facingMode: currentFacingMode },
+                        audio: false
+                    });
+                } catch (err2) {
+                    statusLog.innerText = "Erro ao acessar câmera: " + err2.message;
+                    return;
+                }
             }
+
+            video.srcObject = localStream;
+            await video.play();
+            torchOn = false;
+
+            for (let socketId in peers) {
+                const pc = peers[socketId];
+                localStream.getTracks().forEach(track => {
+                    const sender = pc.getSenders().find(s => s.track && s.track.kind === track.kind);
+                    if (sender) {
+                        sender.replaceTrack(track);
+                    } else {
+                        pc.addTrack(track, localStream);
+                    }
+                });
+            }
+
+            statusLog.innerText = `Transmitindo ao vivo (${cameraName})...`;
         }
 
         async function toggleCamera() {
@@ -218,7 +235,7 @@ const config = {
         socket.on('candidate', async (data) => {
             const pc = peers[data.senderId];
             if (pc && data.candidate) {
-                await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+                await pc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(e => console.log(e));
             }
         });
 
@@ -247,3 +264,4 @@ const config = {
     </script>
 </body>
 </html>
+
