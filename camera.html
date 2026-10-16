@@ -4,6 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Câmera - Emissor Passivo com Áudio</title>
+    
+    <!-- Configurações PWA -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#008cba">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-title" content="Sandapp Cam">
+
     <script src="/socket.io/socket.io.js"></script>
     <style>
         body { background: #000; color: #fff; font-family: sans-serif; text-align: center; padding: 20px; }
@@ -19,7 +27,6 @@
 <body>
     <h2 id="camTitle">Identificação da Câmera</h2>
 
-    <!-- Formulário visível para escolher o nome do local -->
     <div class="setup-box" id="nameBox">
         <p style="margin-top:0;">Digite o local/nome desta câmera:</p>
         <input type="text" id="camNameInput" placeholder="Ex: Sala, Garagem, Cozinha" value="Sala">
@@ -27,7 +34,6 @@
         <button onclick="confirmCameraName()">Iniciar Transmissão</button>
     </div>
 
-    <!-- Interface da Câmera (Inicia oculta) -->
     <div id="camArea" style="display:none;">
         <video id="preview" autoplay playsinline muted></video>
         <audio id="remoteAudio" autoplay></audio>
@@ -38,6 +44,24 @@
     </div>
 
     <script>
+        // Registrar PWA
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js');
+        }
+
+        // Bloqueio para impedir a tela de apagar
+        let wakeLock = null;
+        async function requestWakeLock() {
+            try {
+                if ('wakeLock' in navigator) {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    console.log('Wake Lock ativo: Tela não apagará.');
+                }
+            } catch (err) {
+                console.log(`Wake Lock erro: ${err.name}, ${err.message}`);
+            }
+        }
+
         const socket = io();
         const video = document.getElementById('preview');
         const remoteAudio = document.getElementById('remoteAudio');
@@ -49,30 +73,16 @@
         const nameBox = document.getElementById('nameBox');
         const camArea = document.getElementById('camArea');
 
-        // Configuração dos Servidores STUN/TURN
         const config = { 
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
                 { urls: 'stun:stun1.l.google.com:19302' },
-                {
-                    urls: 'turn:openrelay.metered.ca:80',
-                    username: 'openrelay',
-                    credential: 'openrelay'
-                },
-                {
-                    urls: 'turn:openrelay.metered.ca:443',
-                    username: 'openrelay',
-                    credential: 'openrelay'
-                },
-                {
-                    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-                    username: 'openrelay',
-                    credential: 'openrelay'
-                }
+                { urls: 'turn:openrelay.metered.ca:80', username: 'openrelay', credential: 'openrelay' },
+                { urls: 'turn:openrelay.metered.ca:443', username: 'openrelay', credential: 'openrelay' },
+                { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelay', credential: 'openrelay' }
             ] 
         };
 
-        // Declaração das Variáveis do Sistema (RESTAURADAS)
         const peers = {}; 
         let localStream = null;
         let prevFrame = null;
@@ -89,11 +99,9 @@
             camArea.style.display = 'block';
             camTitle.innerText = `Câmera: ${cameraName}`;
 
-            // Registra a câmera no servidor
             socket.emit('register-camera', cameraName);
-
-            // Inicia os sensores da câmera e microfone
             await startCamera();
+            await requestWakeLock(); // Ativa a tela sempre acesa
         }
 
         async function startCamera() {
@@ -102,7 +110,6 @@
             }
 
             try {
-                // Tenta capturar vídeo + áudio
                 localStream = await navigator.mediaDevices.getUserMedia({
                     video: { facingMode: { exact: currentFacingMode } },
                     audio: true
@@ -113,7 +120,6 @@
                     });
                 });
             } catch (err) {
-                // Fallback: se falhar o áudio (ex: dispositivo sem mic), tenta apenas vídeo
                 try {
                     localStream = await navigator.mediaDevices.getUserMedia({
                         video: { facingMode: currentFacingMode },
@@ -158,9 +164,7 @@
 
             try {
                 torchOn = !torchOn;
-                await track.applyConstraints({
-                    advanced: [{ torch: torchOn }]
-                });
+                await track.applyConstraints({ advanced: [{ torch: torchOn }] });
             } catch (e) {
                 console.log("Erro na lanterna: " + e.message);
             }
@@ -219,10 +223,7 @@
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
             
-            socket.emit('offer', { 
-                offer: offer, 
-                targetId: monitorSocketId 
-            });
+            socket.emit('offer', { offer: offer, targetId: monitorSocketId });
         });
 
         socket.on('answer', async (data) => {
@@ -264,4 +265,3 @@
     </script>
 </body>
 </html>
-
