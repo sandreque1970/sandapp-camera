@@ -4,6 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Central de Monitoramento</title>
+
+    <!-- Configurações PWA -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#008cba">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-title" content="Sandapp Monitor">
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js');
+        }
+    </script>
+
     <script src="/socket.io/socket.io.js"></script>
     <style>
         body { background: #111; color: #fff; font-family: sans-serif; text-align: center; padding: 20px; }
@@ -216,7 +229,7 @@
             socket.emit('camera-control', { targetCameraId: selectedCameraId, action: action });
         }
 
-        // Controls Push-to-Talk
+        // Controles Push-to-Talk
         function startTalking(e) {
             if (e) e.preventDefault();
             if (!localMicStream) {
