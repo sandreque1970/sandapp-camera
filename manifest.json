@@ -1,0 +1,21 @@
+{
+  "name": "Sandapp Camera",
+  "short_name": "SandApp",
+  "start_url": "/monitor.html",
+  "display": "standalone",
+  "background_color": "#111111",
+  "theme_color": "#008cba",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2928/2928883.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2928/2928883.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
