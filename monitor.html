@@ -54,8 +54,8 @@
         </select>
     </div>
 
-    <!-- Player de Vídeo -->
-    <video id="remoteVideo" autoplay playsinline controls></video>
+    <!-- Player de Vídeo (com muted para liberar o autoplay no PC) -->
+    <video id="remoteVideo" autoplay playsinline muted controls></video>
     
     <!-- Controles Remotos -->
     <div class="controls-remote" id="remoteControls">
@@ -183,8 +183,14 @@
 
             peerConnection.ontrack = (event) => {
                 if (event.streams && event.streams[0]) {
-                    remoteVideo.srcObject = event.streams[0];
-                    remoteVideo.play().catch(e => console.log("Erro ao reproduzir:", e));
+                    if (remoteVideo.srcObject !== event.streams[0]) {
+                        remoteVideo.srcObject = event.streams[0];
+                        
+                        // Força a reprodução imediata tratando restrições de autoplay no PC
+                        remoteVideo.play().catch(error => {
+                            console.log("Autoplay retido pelo navegador, aguardando clique:", error);
+                        });
+                    }
                     statusDiv.innerText = `Transmissão On-line: ${activeCamerasList[cameraSocketId] || 'Câmera'}`;
                     statusDiv.style.color = "#55ff55";
                 }
