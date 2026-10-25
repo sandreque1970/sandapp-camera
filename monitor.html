@@ -194,10 +194,18 @@
 
             peerConnection.ontrack = (event) => {
                 if (event.streams && event.streams[0]) {
-                    if (remoteVideo.srcObject !== event.streams[0]) {
-                        remoteVideo.srcObject = event.streams[0];
-                        remoteVideo.play().catch(e => console.log("Autoplay:", e));
+                    remoteVideo.srcObject = event.streams[0];
+                    remoteVideo.muted = true; // Força mutado para evitar bloqueio de renderização do Windows
+                    
+                    const playPromise = remoteVideo.play();
+                    if (playPromise !== undefined) {
+                        playPromise.then(() => {
+                            console.log("Vídeo reproduzido com sucesso!");
+                        }).catch(e => {
+                            console.log("Autoplay retido:", e);
+                        });
                     }
+
                     const camName = getCameraLabel(activeCamerasList[cameraSocketId]);
                     statusDiv.innerText = `Transmissão On-line: ${camName}`;
                     statusDiv.style.color = "#55ff55";
@@ -221,6 +229,7 @@
             const cameraSocketId = data.senderId || data.requesterId || data.targetId;
             const pc = createPeer(cameraSocketId);
             await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+            
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
             
