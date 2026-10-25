@@ -1,54 +1,99 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
+const io = new Server(server, {
+    cors: { origin: "*" }
+});
 
-app.use(express.static(__dirname));
+app.use(express.static(path.join(__dirname, '/')));
 
-const activeCameras = {}; // { socketId: name }
+let cameras = {}; // Guarda { socketId: name }
+let monitors = new Set();
 
 io.on('connection', (socket) => {
+    console.log('Novo dispositivo conectado:', socket.id);
 
-    socket.on('register-camera', (cameraName) => {
-        activeCameras[socket.id] = cameraName || `Câmera ${Object.keys(activeCameras).length + 1}`;
-        socket.join('cameras-room');
-        io.emit('update-camera-list', activeCameras);
+    // Registro da Câmera
+    socket.on('register-camera', (data) => {
+        const camName = (typeof data === 'object' && data.cameraName) ? data.cameraName : (data || "Câmera");
+        cameras[socket.id] = camName;
+        console.log(`Câmera registrada [${socket.id}]: ${camName}`);
+        io.emit('update-camera-list', cameras);
     });
 
+    // Registro do Monitor
     socket.on('register-monitor', () => {
-        socket.join('monitors-room');
-        socket.emit('update-camera-list', activeCameras);
+        monitors.add(socket.id);
+        socket.emit('update-camera-list', cameras);
     });
 
-    // Monitor pede que a câmera envie a oferta WebRTC
+    // Pedido de oferta do Monitor para a Câmera
     socket.on('request-offer', (data) => {
-        io.to(data.targetCameraId).emit('user-connected', socket.id);
-    });
-
-    socket.on('offer', (data) => {
-        io.to(data.targetId).emit('offer', { offer: data.offer, senderId: socket.id });
-    });
-
-    socket.on('answer', (data) => {
-        io.to(data.targetId).emit('answer', { answer: data.answer, senderId: socket.id });
-    });
-
-    socket.on('candidate', (data) => {
-        io.to(data.targetId).emit('candidate', { candidate: data.candidate, senderId: socket.id });
-    });
-
-    socket.on('camera-control', (data) => {
-        io.to(data.targetCameraId).emit('camera-control', data.action);
-    });
-
-    socket.on('disconnect', () => {
-        if (activeCameras[socket.id]) {
-            delete activeCameras[socket.id];
-            io.emit('update-camera-list', activeCameras);
+        const targetCamId = data.targetCameraId || data.targetId;
+        if (targetCamId && io.sockets.sockets.get(targetCamId)) {
+            io.to(targetCamId).emit('request-offer', { 
+                requesterId: socket.id,
+                senderId: socket.id 
+            });
         }
+    });
+
+    // Repasse da Oferta (Câmera -> Monitor)
+    socket.on('offer', (data) => {
+        const targetId = data.targetId || data.targetCameraId;
+        if (targetId) {
+            io.to(targetId).emit('offer', {
+                offer: data.offer,
+                senderId: socket.id,
+                requesterId: socket.id
+            });
+        }
+    });
+
+    // Repasse da Resposta (Monitor -> Câmera)
+    socket.on('answer', (data) => {
+        const targetId = data.targetId || data.targetCameraId;
+        if (targetId) {
+            io.to(targetId).emit('answer', {
+                answer: data.answer,
+                senderId: socket.id,
+                requesterId: socket.id
+            });
+        }
+    });
+
+    // Repasse dos Candidatos ICE (Rede P2P)
+    socket.on('candidate', (data) => {
+        const targetId = data.targetId || data.targetCameraId;
+        if (targetId) {
+            io.to(targetId).emit('candidate', {
+                candidate: data.candidate,
+                senderId: socket.id,
+                requesterId: socket.id
+            });
+        }
+    });
+
+    // Controles Remotos (Alternar Câmera / Lanterna)
+    socket.on('camera-control', (data) => {
+        const targetCamId = data.targetCameraId || data.targetId;
+        if (targetCamId) {
+            io.to(targetCamId).emit('camera-control', { action: data.action });
+        }
+    });
+
+    // Desconexão de Dispositivos
+    socket.on('disconnect', () => {
+        if (cameras[socket.id]) {
+            console.log(`Câmera desconectada: ${cameras[socket.id]}`);
+            delete cameras[socket.id];
+            io.emit('update-camera-list', cameras);
+        }
+        monitors.delete(socket.id);
     });
 });
 
