@@ -3,265 +3,206 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Câmera - Emissor Passivo com Áudio</title>
-    
+    <title>Câmera Transmissora</title>
+
     <!-- Configurações PWA -->
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#008cba">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black">
-    <meta name="apple-mobile-web-app-title" content="Sandapp Cam">
-
-    <script src="/socket.io/socket.io.js"></script>
-    <style>
-        body { background: #000; color: #fff; font-family: sans-serif; text-align: center; padding: 20px; }
-        video { width: 100%; max-width: 320px; background: #222; border-radius: 8px; }
-        audio { display: none; }
-        .status { margin-top: 15px; font-weight: bold; }
-        .info { margin-top: 10px; color: #00d2ff; }
-        .setup-box { margin-bottom: 15px; background: #222; padding: 15px; border-radius: 8px; display: inline-block; }
-        input { padding: 10px; border-radius: 5px; border: 1px solid #444; background: #111; color: #fff; text-align: center; font-size: 16px; margin-bottom: 10px; }
-        button { padding: 10px 20px; border-radius: 5px; border: none; background: #008cba; color: #fff; font-size: 16px; cursor: pointer; }
-    </style>
-</head>
-<body>
-    <h2 id="camTitle">Identificação da Câmera</h2>
-
-    <div class="setup-box" id="nameBox">
-        <p style="margin-top:0;">Digite o local/nome desta câmera:</p>
-        <input type="text" id="camNameInput" placeholder="Ex: Sala, Garagem, Cozinha" value="Sala">
-        <br>
-        <button onclick="confirmCameraName()">Iniciar Transmissão</button>
-    </div>
-
-    <div id="camArea" style="display:none;">
-        <video id="preview" autoplay playsinline muted></video>
-        <audio id="remoteAudio" autoplay></audio>
-        <canvas id="motionCanvas" width="160" height="120" style="display:none;"></canvas>
-
-        <div class="status" id="statusLog">Iniciando...</div>
-        <div class="info" id="monitorCount">Monitores conectados: 0</div>
-    </div>
-
     <script>
-        // Registrar PWA
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/sw.js');
         }
+    </script>
 
-        // Bloqueio para impedir a tela de apagar
-        let wakeLock = null;
-        async function requestWakeLock() {
-            try {
-                if ('wakeLock' in navigator) {
-                    wakeLock = await navigator.wakeLock.request('screen');
-                    console.log('Wake Lock ativo: Tela não apagará.');
-                }
-            } catch (err) {
-                console.log(`Wake Lock erro: ${err.name}, ${err.message}`);
-            }
-        }
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { background: #111; color: #fff; font-family: sans-serif; text-align: center; padding: 20px; }
+        video { width: 100%; max-width: 640px; background: #000; border: 2px solid #444; border-radius: 8px; margin-top: 10px; }
+        input { padding: 10px; border-radius: 5px; border: 1px solid #444; background: #222; color: #fff; text-align: center; font-size: 16px; }
+        .btn { padding: 10px 20px; border-radius: 5px; border: none; background: #28a745; color: #fff; font-size: 16px; cursor: pointer; margin-left: 5px; }
+        .btn:hover { background: #218838; }
+        .status { margin-top: 15px; color: #aaa; }
+    </style>
+</head>
+<body>
+    <h2>Câmera Transmissora</h2>
+    
+    <div id="setup">
+        <input type="text" id="cameraName" placeholder="Nome da Câmera (ex: Sala)">
+        <button class="btn" onclick="startCamera()">Iniciar Câmera</button>
+    </div>
 
+    <video id="localVideo" autoplay playsinline muted></video>
+    <audio id="remoteAudio" autoplay></audio>
+    <div class="status" id="status">Aguardando início...</div>
+
+    <script>
         const socket = io();
-        const video = document.getElementById('preview');
+        const localVideo = document.getElementById('localVideo');
         const remoteAudio = document.getElementById('remoteAudio');
-        const canvas = document.getElementById('motionCanvas');
-        const ctx = canvas.getContext('2d');
-        const statusLog = document.getElementById('statusLog');
-        const monitorCountDiv = document.getElementById('monitorCount');
-        const camTitle = document.getElementById('camTitle');
-        const nameBox = document.getElementById('nameBox');
-        const camArea = document.getElementById('camArea');
+        const statusDiv = document.getElementById('status');
+        
+        let localStream = null;
+        let peerConnections = {};
+        let wakeLock = null;
+        let currentFacingMode = 'environment';
+        let isTorchOn = false;
 
         const config = { 
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
                 { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'turn:openrelay.metered.ca:80', username: 'openrelay', credential: 'openrelay' },
-                { urls: 'turn:openrelay.metered.ca:443', username: 'openrelay', credential: 'openrelay' },
-                { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelay', credential: 'openrelay' }
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun3.l.google.com:19302' },
+                { urls: 'stun:stun4.l.google.com:19302' },
+                {
+                    urls: 'turn:openrelay.metered.ca:80',
+                    username: 'openrelay',
+                    credential: 'openrelay'
+                },
+                {
+                    urls: 'turn:openrelay.metered.ca:443',
+                    username: 'openrelay',
+                    credential: 'openrelay'
+                },
+                {
+                    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+                    username: 'openrelay',
+                    credential: 'openrelay'
+                }
             ] 
         };
 
-        const peers = {}; 
-        let localStream = null;
-        let prevFrame = null;
-        let currentFacingMode = "environment";
-        let torchOn = false;
-        let cameraName = "Câmera";
-
-        async function confirmCameraName() {
-            const inputVal = document.getElementById('camNameInput').value.trim();
-            if (inputVal) {
-                cameraName = inputVal;
+        async function requestWakeLock() {
+            try {
+                if ('wakeLock' in navigator) {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    console.log('Wake Lock ativo: a tela não vai apagar.');
+                }
+            } catch (err) {
+                console.log(`Erro ao ativar Wake Lock: ${err.message}`);
             }
-            nameBox.style.display = 'none';
-            camArea.style.display = 'block';
-            camTitle.innerText = `Câmera: ${cameraName}`;
-
-            socket.emit('register-camera', cameraName);
-            await startCamera();
-            await requestWakeLock(); // Ativa a tela sempre acesa
         }
 
         async function startCamera() {
-            if (localStream) {
-                localStream.getTracks().forEach(track => track.stop());
+            const nameInput = document.getElementById('cameraName').value.trim();
+            if (!nameInput) {
+                alert("Por favor, digite um nome para esta câmera!");
+                return;
             }
 
             try {
                 localStream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: { exact: currentFacingMode } },
+                    video: { facingMode: currentFacingMode },
                     audio: true
-                }).catch(async () => {
-                    return await navigator.mediaDevices.getUserMedia({
-                        video: { facingMode: currentFacingMode },
-                        audio: true
-                    });
                 });
-            } catch (err) {
-                try {
-                    localStream = await navigator.mediaDevices.getUserMedia({
-                        video: { facingMode: currentFacingMode },
-                        audio: false
-                    });
-                } catch (err2) {
-                    statusLog.innerText = "Erro ao acessar câmera: " + err2.message;
-                    return;
-                }
-            }
+                
+                localVideo.srcObject = localStream;
+                document.getElementById('setup').style.display = 'none';
+                statusDiv.innerText = `Transmitindo como: "${nameInput}"`;
+                statusDiv.style.color = "#55ff55";
 
-            video.srcObject = localStream;
-            await video.play();
-            torchOn = false;
+                await requestWakeLock();
 
-            for (let socketId in peers) {
-                const pc = peers[socketId];
-                localStream.getTracks().forEach(track => {
-                    const sender = pc.getSenders().find(s => s.track && s.track.kind === track.kind);
-                    if (sender) {
-                        sender.replaceTrack(track);
-                    } else {
-                        pc.addTrack(track, localStream);
-                    }
-                });
-            }
-
-            statusLog.innerText = `Transmitindo ao vivo (${cameraName})...`;
-        }
-
-        async function toggleCamera() {
-            currentFacingMode = (currentFacingMode === "environment") ? "user" : "environment";
-            await startCamera();
-        }
-
-        async function toggleTorch() {
-            if (!localStream) return;
-            const track = localStream.getVideoTracks()[0];
-            const capabilities = track.getCapabilities ? track.getCapabilities() : {};
-
-            if (!capabilities.torch) return;
-
-            try {
-                torchOn = !torchOn;
-                await track.applyConstraints({ advanced: [{ torch: torchOn }] });
+                socket.emit('register-camera', { cameraName: nameInput });
             } catch (e) {
-                console.log("Erro na lanterna: " + e.message);
+                alert("Erro ao acessar câmera/microfone: " + e.message);
             }
         }
-
-        socket.on('camera-control', (action) => {
-            if (action === 'toggle-camera') {
-                toggleCamera();
-            } else if (action === 'toggle-torch') {
-                toggleTorch();
-            }
-        });
 
         function createPeerForMonitor(monitorSocketId) {
             const pc = new RTCPeerConnection(config);
-            peers[monitorSocketId] = pc;
+            peerConnections[monitorSocketId] = pc;
 
             if (localStream) {
                 localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
             }
 
             pc.ontrack = (event) => {
-                if (event.track.kind === 'audio') {
+                if (event.streams && event.streams[0]) {
                     remoteAudio.srcObject = event.streams[0];
-                    remoteAudio.play().catch(e => console.log("Erro ao tocar áudio do monitor:", e));
                 }
             };
 
-            pc.onicecandidate = (e) => {
-                if (e.candidate) {
-                    socket.emit('candidate', { 
-                        candidate: e.candidate,
-                        targetId: monitorSocketId 
+            pc.onicecandidate = (event) => {
+                if (event.candidate) {
+                    socket.emit('candidate', {
+                        candidate: event.candidate,
+                        targetId: monitorSocketId
                     });
                 }
             };
 
-            pc.onconnectionstatechange = () => {
-                if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-                    delete peers[monitorSocketId];
-                    updateMonitorCount();
-                }
-            };
-
-            updateMonitorCount();
             return pc;
         }
 
-        function updateMonitorCount() {
-            const count = Object.keys(peers).length;
-            monitorCountDiv.innerText = `Monitores conectados: ${count}`;
-        }
-
-        socket.on('user-connected', async (monitorSocketId) => {
+        socket.on('request-offer', async (data) => {
+            const monitorSocketId = data.requesterId;
             const pc = createPeerForMonitor(monitorSocketId);
+
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
-            
-            socket.emit('offer', { offer: offer, targetId: monitorSocketId });
+
+            socket.emit('offer', {
+                offer: offer,
+                targetId: monitorSocketId
+            });
         });
 
         socket.on('answer', async (data) => {
-            const pc = peers[data.senderId];
+            const pc = peerConnections[data.senderId];
             if (pc) {
                 await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
             }
         });
 
         socket.on('candidate', async (data) => {
-            const pc = peers[data.senderId];
+            const pc = peerConnections[data.senderId];
             if (pc && data.candidate) {
                 await pc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(e => console.log(e));
             }
         });
 
-        function detectMotion() {
-            if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            const currentFrame = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            
-            if (prevFrame) {
-                let diffCount = 0;
-                for (let i = 0; i < currentFrame.data.length; i += 4) {
-                    const diff = Math.abs(currentFrame.data[i] - prevFrame.data[i]);
-                    if (diff > 30) diffCount++;
+        socket.on('camera-control', async (data) => {
+            if (data.action === 'toggle-camera') {
+                currentFacingMode = (currentFacingMode === 'environment') ? 'user' : 'environment';
+                if (localStream) {
+                    localStream.getTracks().forEach(track => track.stop());
                 }
-                if (diffCount > 500) {
-                    statusLog.style.color = '#ff5555';
-                    statusLog.innerText = "⚠ Movimento Detectado!";
-                } else {
-                    statusLog.style.color = '#55ff55';
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: currentFacingMode },
+                    audio: true
+                });
+                localVideo.srcObject = localStream;
+
+                for (let monitorId in peerConnections) {
+                    const pc = peerConnections[monitorId];
+                    const senders = pc.getSenders();
+                    const videoTrack = localStream.getVideoTracks()[0];
+                    const sender = senders.find(s => s.track && s.track.kind === 'video');
+                    if (sender) {
+                        sender.replaceTrack(videoTrack);
+                    }
+                }
+            } else if (data.action === 'toggle-torch') {
+                if (localStream) {
+                    const videoTrack = localStream.getVideoTracks()[0];
+                    const capabilities = videoTrack.getCapabilities();
+                    if (capabilities.torch) {
+                        isTorchOn = !isTorchOn;
+                        await videoTrack.applyConstraints({ advanced: [{ torch: isTorchOn }] });
+                    } else {
+                        alert("Lanterna não suportada neste dispositivo.");
+                    }
                 }
             }
-            prevFrame = currentFrame;
-        }
+        });
 
-        setInterval(detectMotion, 300);
+        document.addEventListener('visibilitychange', async () => {
+            if (wakeLock !== null && document.visibilityState === 'visible') {
+                await requestWakeLock();
+            }
+        });
     </script>
 </body>
 </html>
