@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Central de Monitoramento</title>
 
-    <!-- Configurações PWA -->
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#008cba">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -194,16 +193,12 @@
 
             peerConnection.ontrack = (event) => {
                 if (event.streams && event.streams[0]) {
-                    remoteVideo.srcObject = event.streams[0];
-                    remoteVideo.muted = true; // Força mutado para evitar bloqueio de renderização do Windows
-                    
-                    const playPromise = remoteVideo.play();
-                    if (playPromise !== undefined) {
-                        playPromise.then(() => {
-                            console.log("Vídeo reproduzido com sucesso!");
-                        }).catch(e => {
-                            console.log("Autoplay retido:", e);
-                        });
+                    if (remoteVideo.srcObject !== event.streams[0]) {
+                        remoteVideo.srcObject = event.streams[0];
+                        remoteVideo.muted = true;
+                        
+                        remoteVideo.load();
+                        remoteVideo.play().catch(e => console.log("Autoplay:", e));
                     }
 
                     const camName = getCameraLabel(activeCamerasList[cameraSocketId]);
