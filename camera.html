@@ -21,7 +21,7 @@
         input { padding: 10px; border-radius: 5px; border: 1px solid #444; background: #222; color: #fff; text-align: center; font-size: 16px; }
         .btn { padding: 10px 20px; border-radius: 5px; border: none; background: #28a745; color: #fff; font-size: 16px; cursor: pointer; margin-left: 5px; }
         .btn:hover { background: #218838; }
-        .status { margin-top: 15px; color: #aaa; }
+        .status { margin-top: 15px; color: #aaa; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -126,7 +126,8 @@
                 if (event.candidate) {
                     socket.emit('candidate', {
                         candidate: event.candidate,
-                        targetId: monitorSocketId
+                        targetId: monitorSocketId,
+                        targetCameraId: monitorSocketId
                     });
                 }
             };
@@ -135,7 +136,7 @@
         }
 
         socket.on('request-offer', async (data) => {
-            const monitorSocketId = data.requesterId || data.senderId;
+            const monitorSocketId = data.requesterId || data.senderId || data.targetId;
             if (!monitorSocketId) return;
 
             const pc = createPeerForMonitor(monitorSocketId);
@@ -145,12 +146,13 @@
 
             socket.emit('offer', {
                 offer: offer,
-                targetId: monitorSocketId
+                targetId: monitorSocketId,
+                targetCameraId: monitorSocketId
             });
         });
 
         socket.on('answer', async (data) => {
-            const senderId = data.senderId || data.requesterId;
+            const senderId = data.senderId || data.requesterId || data.targetId;
             const pc = peerConnections[senderId];
             if (pc) {
                 await pc.setRemoteDescription(new RTCSessionDescription(data.answer)).catch(e => console.log(e));
@@ -158,7 +160,7 @@
         });
 
         socket.on('candidate', async (data) => {
-            const senderId = data.senderId || data.requesterId;
+            const senderId = data.senderId || data.requesterId || data.targetId;
             const pc = peerConnections[senderId];
             if (pc && data.candidate) {
                 await pc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(e => console.log(e));
