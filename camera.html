@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Câmera Transmissora</title>
 
-    <!-- Configurações PWA -->
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#008cba">
     <script>
@@ -79,7 +78,6 @@
         }
 
         async function getMediaStream() {
-            // Perfil universal de vídeo (640x480 / 30fps) compatível com decodificadores do Windows
             return await navigator.mediaDevices.getUserMedia({
                 video: { 
                     facingMode: currentFacingMode,
