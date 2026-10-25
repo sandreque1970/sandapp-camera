@@ -54,7 +54,7 @@
         </select>
     </div>
 
-    <!-- Player de Vídeo (com muted para liberar o autoplay no PC) -->
+    <!-- Player de Vídeo -->
     <video id="remoteVideo" autoplay playsinline muted controls></video>
     
     <!-- Controles Remotos -->
@@ -84,11 +84,14 @@
         let peerConnection = null;
         let localMicStream = null;
 
-        // Configuração dos Servidores STUN/TURN para atravessar Firewalls
+        // Servidores STUN/TURN Expandidos para Conexão P2P com PC/Notebook
         const config = { 
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
                 { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun3.l.google.com:19302' },
+                { urls: 'stun:stun4.l.google.com:19302' },
                 {
                     urls: 'turn:openrelay.metered.ca:80',
                     username: 'openrelay',
@@ -186,7 +189,6 @@
                     if (remoteVideo.srcObject !== event.streams[0]) {
                         remoteVideo.srcObject = event.streams[0];
                         
-                        // Força a reprodução imediata tratando restrições de autoplay no PC
                         remoteVideo.play().catch(error => {
                             console.log("Autoplay retido pelo navegador, aguardando clique:", error);
                         });
@@ -266,4 +268,3 @@
     </script>
 </body>
 </html>
-
