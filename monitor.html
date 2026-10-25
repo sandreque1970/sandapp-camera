@@ -84,7 +84,6 @@
         let peerConnection = null;
         let localMicStream = null;
 
-        // Servidores STUN/TURN Expandidos para Conexão P2P com PC/Notebook
         const config = { 
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
@@ -136,6 +135,15 @@
             }
         }
 
+        // Obtém o nome legível da câmera seja ela string ou objeto
+        function getCameraLabel(camData) {
+            if (!camData) return 'Câmera';
+            if (typeof camData === 'object') {
+                return camData.cameraName || camData.name || 'Câmera';
+            }
+            return camData;
+        }
+
         socket.on('update-camera-list', (cameras) => {
             activeCamerasList = cameras;
             cameraSelect.innerHTML = '<option value="">-- Selecione uma Câmera --</option>';
@@ -143,7 +151,7 @@
             for (let id in cameras) {
                 const option = document.createElement('option');
                 option.value = id;
-                option.textContent = cameras[id];
+                option.textContent = getCameraLabel(cameras[id]);
                 if (id === selectedCameraId) option.selected = true;
                 cameraSelect.appendChild(option);
             }
@@ -160,7 +168,8 @@
                 return;
             }
 
-            statusDiv.innerText = `Conectando a ${activeCamerasList[selectedCameraId]}...`;
+            const camName = getCameraLabel(activeCamerasList[selectedCameraId]);
+            statusDiv.innerText = `Conectando a ${camName}...`;
             statusDiv.style.color = "#aaa";
 
             if (peerConnection) {
@@ -193,7 +202,8 @@
                             console.log("Autoplay retido pelo navegador, aguardando clique:", error);
                         });
                     }
-                    statusDiv.innerText = `Transmissão On-line: ${activeCamerasList[cameraSocketId] || 'Câmera'}`;
+                    const camName = getCameraLabel(activeCamerasList[cameraSocketId]);
+                    statusDiv.innerText = `Transmissão On-line: ${camName}`;
                     statusDiv.style.color = "#55ff55";
                 }
             };
