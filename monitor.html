@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Central de Monitoramento</title>
 
+    <!-- Configurações PWA -->
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#008cba">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -19,7 +20,7 @@
     <script src="/socket.io/socket.io.js"></script>
     <style>
         body { background: #111; color: #fff; font-family: sans-serif; text-align: center; padding: 20px; }
-        video { width: 100%; max-width: 640px; background: #000; border: 2px solid #444; border-radius: 8px; display: none; }
+        video { width: 100%; max-width: 640px; background: #000; border: 2px solid #444; border-radius: 8px; display: none; cursor: pointer; }
         .status { margin-top: 15px; color: #aaa; font-weight: bold; }
         #lockScreen { margin-top: 50px; }
         input, select { padding: 10px; border-radius: 5px; border: 1px solid #444; background: #222; color: #fff; text-align: center; font-size: 16px; margin: 5px; }
@@ -195,10 +196,18 @@
                 if (event.streams && event.streams[0]) {
                     if (remoteVideo.srcObject !== event.streams[0]) {
                         remoteVideo.srcObject = event.streams[0];
-                        remoteVideo.muted = true;
+                        remoteVideo.muted = true; // Garante o silêncio para liberar o Autoplay do Chrome
                         
-                        remoteVideo.load();
-                        remoteVideo.play().catch(e => console.log("Autoplay:", e));
+                        // Tratamento assíncrono para evitar AbortError do Chrome no Windows
+                        const playPromise = remoteVideo.play();
+                        if (playPromise !== undefined) {
+                            playPromise.then(() => {
+                                console.log("Vídeo reproduzido com sucesso no PC!");
+                            }).catch(error => {
+                                console.log("Autoplay retido pelo navegador, aguardando interacao:", error);
+                                remoteVideo.controls = true;
+                            });
+                        }
                     }
 
                     const camName = getCameraLabel(activeCamerasList[cameraSocketId]);
