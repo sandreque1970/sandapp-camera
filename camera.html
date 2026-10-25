@@ -64,11 +64,6 @@
                     urls: 'turn:openrelay.metered.ca:443',
                     username: 'openrelay',
                     credential: 'openrelay'
-                },
-                {
-                    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-                    username: 'openrelay',
-                    credential: 'openrelay'
                 }
             ] 
         };
@@ -77,10 +72,9 @@
             try {
                 if ('wakeLock' in navigator) {
                     wakeLock = await navigator.wakeLock.request('screen');
-                    console.log('Wake Lock ativo: a tela não vai apagar.');
                 }
             } catch (err) {
-                console.log(`Erro ao ativar Wake Lock: ${err.message}`);
+                console.log(`Wake Lock: ${err.message}`);
             }
         }
 
@@ -106,11 +100,15 @@
 
                 socket.emit('register-camera', { cameraName: nameInput });
             } catch (e) {
-                alert("Erro ao acessar câmera/microfone: " + e.message);
+                alert("Erro ao acessar câmera: " + e.message);
             }
         }
 
         function createPeerForMonitor(monitorSocketId) {
+            if (peerConnections[monitorSocketId]) {
+                peerConnections[monitorSocketId].close();
+            }
+
             const pc = new RTCPeerConnection(config);
             peerConnections[monitorSocketId] = pc;
 
@@ -137,7 +135,9 @@
         }
 
         socket.on('request-offer', async (data) => {
-            const monitorSocketId = data.requesterId;
+            const monitorSocketId = data.requesterId || data.senderId;
+            if (!monitorSocketId) return;
+
             const pc = createPeerForMonitor(monitorSocketId);
 
             const offer = await pc.createOffer();
@@ -150,14 +150,16 @@
         });
 
         socket.on('answer', async (data) => {
-            const pc = peerConnections[data.senderId];
+            const senderId = data.senderId || data.requesterId;
+            const pc = peerConnections[senderId];
             if (pc) {
-                await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+                await pc.setRemoteDescription(new RTCSessionDescription(data.answer)).catch(e => console.log(e));
             }
         });
 
         socket.on('candidate', async (data) => {
-            const pc = peerConnections[data.senderId];
+            const senderId = data.senderId || data.requesterId;
+            const pc = peerConnections[senderId];
             if (pc && data.candidate) {
                 await pc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(e => console.log(e));
             }
