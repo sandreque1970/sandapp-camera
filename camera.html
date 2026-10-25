@@ -78,6 +78,19 @@
             }
         }
 
+        async function getMediaStream() {
+            // Perfil universal de vídeo (640x480 / 30fps) compatível com decodificadores do Windows
+            return await navigator.mediaDevices.getUserMedia({
+                video: { 
+                    facingMode: currentFacingMode,
+                    width: { ideal: 640 },
+                    height: { ideal: 480 },
+                    frameRate: { max: 30 }
+                },
+                audio: true
+            });
+        }
+
         async function startCamera() {
             const nameInput = document.getElementById('cameraName').value.trim();
             if (!nameInput) {
@@ -86,18 +99,13 @@
             }
 
             try {
-                localStream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: currentFacingMode },
-                    audio: true
-                });
-                
+                localStream = await getMediaStream();
                 localVideo.srcObject = localStream;
                 document.getElementById('setup').style.display = 'none';
                 statusDiv.innerText = `Transmitindo como: "${nameInput}"`;
                 statusDiv.style.color = "#55ff55";
 
                 await requestWakeLock();
-
                 socket.emit('register-camera', { cameraName: nameInput });
             } catch (e) {
                 alert("Erro ao acessar câmera: " + e.message);
@@ -140,7 +148,6 @@
             if (!monitorSocketId) return;
 
             const pc = createPeerForMonitor(monitorSocketId);
-
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
 
@@ -173,10 +180,7 @@
                 if (localStream) {
                     localStream.getTracks().forEach(track => track.stop());
                 }
-                localStream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: currentFacingMode },
-                    audio: true
-                });
+                localStream = await getMediaStream();
                 localVideo.srcObject = localStream;
 
                 for (let monitorId in peerConnections) {
