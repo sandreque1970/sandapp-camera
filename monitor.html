@@ -100,11 +100,6 @@
                     urls: 'turn:openrelay.metered.ca:443',
                     username: 'openrelay',
                     credential: 'openrelay'
-                },
-                {
-                    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-                    username: 'openrelay',
-                    credential: 'openrelay'
                 }
             ] 
         };
@@ -114,7 +109,7 @@
                 localMicStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
                 localMicStream.getAudioTracks().forEach(track => track.enabled = false);
             } catch (e) {
-                console.log("Microfone do monitor não disponível:", e.message);
+                console.log("Microfone não disponível:", e.message);
             }
         }
 
@@ -135,7 +130,6 @@
             }
         }
 
-        // Obtém o nome legível da câmera seja ela string ou objeto
         function getCameraLabel(camData) {
             if (!camData) return 'Câmera';
             if (typeof camData === 'object') {
@@ -197,10 +191,7 @@
                 if (event.streams && event.streams[0]) {
                     if (remoteVideo.srcObject !== event.streams[0]) {
                         remoteVideo.srcObject = event.streams[0];
-                        
-                        remoteVideo.play().catch(error => {
-                            console.log("Autoplay retido pelo navegador, aguardando clique:", error);
-                        });
+                        remoteVideo.play().catch(e => console.log("Autoplay:", e));
                     }
                     const camName = getCameraLabel(activeCamerasList[cameraSocketId]);
                     statusDiv.innerText = `Transmissão On-line: ${camName}`;
@@ -221,7 +212,7 @@
         }
 
         socket.on('offer', async (data) => {
-            const cameraSocketId = data.senderId;
+            const cameraSocketId = data.senderId || data.requesterId;
             const pc = createPeer(cameraSocketId);
             await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
             const answer = await pc.createAnswer();
@@ -247,7 +238,6 @@
             socket.emit('camera-control', { targetCameraId: selectedCameraId, action: action });
         }
 
-        // Controles Push-to-Talk
         function startTalking(e) {
             if (e) e.preventDefault();
             if (!localMicStream) {
