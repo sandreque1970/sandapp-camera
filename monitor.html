@@ -21,7 +21,7 @@
     <style>
         body { background: #111; color: #fff; font-family: sans-serif; text-align: center; padding: 20px; }
         video { width: 100%; max-width: 640px; background: #000; border: 2px solid #444; border-radius: 8px; display: none; }
-        .status { margin-top: 15px; color: #aaa; }
+        .status { margin-top: 15px; color: #aaa; font-weight: bold; }
         #lockScreen { margin-top: 50px; }
         input, select { padding: 10px; border-radius: 5px; border: 1px solid #444; background: #222; color: #fff; text-align: center; font-size: 16px; margin: 5px; }
         .btn { padding: 10px 20px; border-radius: 5px; border: none; background: #008cba; color: #fff; font-size: 16px; cursor: pointer; margin: 5px; }
@@ -152,6 +152,7 @@
 
             if (Object.keys(cameras).length === 0) {
                 statusDiv.innerText = "Nenhuma câmera online no momento.";
+                statusDiv.style.color = "#aaa";
             }
         });
 
@@ -159,19 +160,23 @@
             selectedCameraId = cameraSelect.value;
             if (!selectedCameraId) {
                 statusDiv.innerText = "Selecione uma câmera acima.";
+                statusDiv.style.color = "#aaa";
                 return;
             }
 
             const camName = getCameraLabel(activeCamerasList[selectedCameraId]);
             statusDiv.innerText = `Conectando a ${camName}...`;
-            statusDiv.style.color = "#aaa";
+            statusDiv.style.color = "#ffcc00";
 
             if (peerConnection) {
                 peerConnection.close();
                 peerConnection = null;
             }
 
-            socket.emit('request-offer', { targetCameraId: selectedCameraId });
+            socket.emit('request-offer', { 
+                targetCameraId: selectedCameraId,
+                targetId: selectedCameraId 
+            });
         }
 
         function createPeer(cameraSocketId) {
@@ -203,7 +208,8 @@
                 if (event.candidate) {
                     socket.emit('candidate', { 
                         candidate: event.candidate,
-                        targetId: cameraSocketId 
+                        targetId: cameraSocketId,
+                        targetCameraId: cameraSocketId
                     });
                 }
             };
@@ -212,7 +218,7 @@
         }
 
         socket.on('offer', async (data) => {
-            const cameraSocketId = data.senderId || data.requesterId;
+            const cameraSocketId = data.senderId || data.requesterId || data.targetId;
             const pc = createPeer(cameraSocketId);
             await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
             const answer = await pc.createAnswer();
@@ -220,7 +226,8 @@
             
             socket.emit('answer', { 
                 answer: answer,
-                targetId: cameraSocketId 
+                targetId: cameraSocketId,
+                targetCameraId: cameraSocketId
             });
         });
 
@@ -235,7 +242,11 @@
                 alert("Selecione uma câmera primeiro!");
                 return;
             }
-            socket.emit('camera-control', { targetCameraId: selectedCameraId, action: action });
+            socket.emit('camera-control', { 
+                targetCameraId: selectedCameraId, 
+                targetId: selectedCameraId,
+                action: action 
+            });
         }
 
         function startTalking(e) {
