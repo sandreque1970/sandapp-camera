@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Central de Monitoramento</title>
 
-    <!-- Configurações PWA -->
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#008cba">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -54,14 +53,16 @@
         </select>
     </div>
 
-    <!-- Player de Vídeo -->
+    <!-- Player de Vídeo/Áudio -->
     <video id="remoteVideo" autoplay playsinline muted controls></video>
-    
+    <audio id="remoteAudio" autoplay></audio>
+
     <!-- Controles Remotos -->
     <div class="controls-remote" id="remoteControls">
         <button class="btn-ctrl" onclick="sendControl('toggle-camera')">🔄 Alternar Câmera</button>
         <button class="btn-ctrl" onclick="sendControl('toggle-torch')">🔦 Alternar Lanterna</button>
         <button class="btn-ctrl btn-mic" id="btnMic">🎤 Pressione para Falar</button>
+        <button class="btn-ctrl" style="background:#2196F3; color:#fff;" onclick="unmuteVideo()">🔊 Ativar Som do Monitor</button>
     </div>
 
     <div class="status" id="status" style="display: none;">Selecione uma câmera acima...</div>
@@ -71,6 +72,7 @@
 
         const socket = io();
         const remoteVideo = document.getElementById('remoteVideo');
+        const remoteAudio = document.getElementById('remoteAudio');
         const statusDiv = document.getElementById('status');
         const lockScreen = document.getElementById('lockScreen');
         const remoteControls = document.getElementById('remoteControls');
@@ -109,7 +111,7 @@
                 localMicStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
                 localMicStream.getAudioTracks().forEach(track => track.enabled = false);
             } catch (e) {
-                console.log("Microfone não disponível:", e.message);
+                console.log("Microfone do monitor não disponível:", e.message);
             }
         }
 
@@ -179,6 +181,11 @@
             });
         }
 
+        function unmuteVideo() {
+            remoteVideo.muted = false;
+            remoteVideo.play();
+        }
+
         function createPeer(cameraSocketId) {
             if (peerConnection) {
                 peerConnection.close();
@@ -192,20 +199,22 @@
                 });
             }
 
+            // Exige recebimento explicito de video e audio do transmissor
+            peerConnection.addTransceiver('video', { direction: 'recvonly' });
+            peerConnection.addTransceiver('audio', { direction: 'recvonly' });
+
             peerConnection.ontrack = (event) => {
                 if (event.streams && event.streams[0]) {
                     if (remoteVideo.srcObject !== event.streams[0]) {
                         remoteVideo.srcObject = event.streams[0];
-                        remoteVideo.muted = true; // Garante o silêncio para liberar o Autoplay do Chrome
+                        remoteVideo.muted = true;
                         
-                        // Tratamento assíncrono para evitar AbortError do Chrome no Windows
                         const playPromise = remoteVideo.play();
                         if (playPromise !== undefined) {
                             playPromise.then(() => {
-                                console.log("Vídeo reproduzido com sucesso no PC!");
+                                console.log("Vídeo e áudio recebidos com sucesso.");
                             }).catch(error => {
-                                console.log("Autoplay retido pelo navegador, aguardando interacao:", error);
-                                remoteVideo.controls = true;
+                                console.log("Autoplay retido pelo Chrome:", error);
                             });
                         }
                     }
