@@ -61,7 +61,6 @@
         <button class="btn-ctrl" onclick="sendControl('toggle-camera')">🔄 Alternar Câmera</button>
         <button class="btn-ctrl" onclick="sendControl('toggle-torch')">🔦 Alternar Lanterna</button>
         <button class="btn-ctrl btn-mic" id="btnMic">🎤 Pressione para Falar</button>
-        <button class="btn-ctrl" style="background:#2196F3; color:#fff;" onclick="unmuteVideo()">🔊 Ativar Som do Monitor</button>
     </div>
 
     <div class="status" id="status" style="display: none;">Selecione uma câmera acima...</div>
@@ -179,11 +178,6 @@
             });
         }
 
-        function unmuteVideo() {
-            remoteVideo.muted = false;
-            remoteVideo.play();
-        }
-
         function createPeer(cameraSocketId) {
             if (peerConnection) {
                 peerConnection.close();
@@ -203,12 +197,13 @@
                         remoteVideo.srcObject = event.streams[0];
                         remoteVideo.muted = true;
                         
+                        remoteVideo.load();
                         const playPromise = remoteVideo.play();
                         if (playPromise !== undefined) {
                             playPromise.then(() => {
                                 console.log("Vídeo exibido com sucesso!");
                             }).catch(error => {
-                                console.log("Autoplay retido pelo Chrome:", error);
+                                console.log("Autoplay retido:", error);
                             });
                         }
                     }
