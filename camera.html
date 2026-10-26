@@ -27,7 +27,7 @@
     <h2>Câmera Transmissora</h2>
     
     <div id="setup">
-        <input type="text" id="cameraName" placeholder="Nome da Câmera (ex: Notebook)">
+        <input type="text" id="cameraName" placeholder="Nome da Câmera (ex: Sala)">
         <button class="btn" onclick="startCamera()">Iniciar Câmera</button>
     </div>
 
@@ -44,7 +44,7 @@
         let localStream = null;
         let peerConnections = {};
         let wakeLock = null;
-        let currentFacingMode = 'user';
+        let currentFacingMode = 'environment';
         let isTorchOn = false;
 
         const config = { 
@@ -78,10 +78,15 @@
         }
 
         async function getMediaStream() {
-            return await navigator.mediaDevices.getUserMedia({
-                video: { width: { ideal: 640 }, height: { ideal: 480 } },
+            const constraints = {
+                video: { 
+                    facingMode: currentFacingMode,
+                    width: { ideal: 640 },
+                    height: { ideal: 480 }
+                },
                 audio: true
-            });
+            };
+            return await navigator.mediaDevices.getUserMedia(constraints);
         }
 
         async function startCamera() {
@@ -101,7 +106,7 @@
                 await requestWakeLock();
                 socket.emit('register-camera', { cameraName: nameInput });
             } catch (e) {
-                alert("Erro ao acessar câmera: " + e.message);
+                alert("Erro ao acessar câmera/microfone: " + e.message);
             }
         }
 
@@ -118,9 +123,6 @@
                     pc.addTrack(track, localStream);
                 });
             }
-
-            // Permite receber o áudio do microfone do monitor
-            pc.addTransceiver('audio', { direction: 'sendrecv' });
 
             pc.ontrack = (event) => {
                 if (event.streams && event.streams[0]) {
@@ -147,7 +149,6 @@
             if (!monitorSocketId) return;
 
             const pc = createPeerForMonitor(monitorSocketId);
-
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
 
@@ -176,26 +177,33 @@
 
         socket.on('camera-control', async (data) => {
             if (data.action === 'toggle-camera') {
-                currentFacingMode = (currentFacingMode === 'environment') ? 'user' : 'environment';
-                if (localStream) {
-                    localStream.getTracks().forEach(track => track.stop());
-                }
-                localStream = await getMediaStream();
-                localVideo.srcObject = localStream;
-
-                for (let monitorId in peerConnections) {
-                    const pc = peerConnections[monitorId];
-                    const senders = pc.getSenders();
-                    const videoTrack = localStream.getVideoTracks()[0];
-                    const sender = senders.find(s => s.track && s.track.kind === 'video');
-                    if (sender) {
-                        sender.replaceTrack(videoTrack);
+                try {
+                    currentFacingMode = (currentFacingMode === 'environment') ? 'user' : 'environment';
+                    
+                    if (localStream) {
+                        localStream.getTracks().forEach(track => track.stop());
                     }
+
+                    localStream = await getMediaStream();
+                    localVideo.srcObject = localStream;
+
+                    const newVideoTrack = localStream.getVideoTracks()[0];
+
+                    for (let monitorId in peerConnections) {
+                        const pc = peerConnections[monitorId];
+                        const senders = pc.getSenders();
+                        const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+                        if (videoSender) {
+                            await videoSender.replaceTrack(newVideoTrack);
+                        }
+                    }
+                } catch (err) {
+                    console.log("Erro ao alternar câmera:", err);
                 }
             } else if (data.action === 'toggle-torch') {
                 if (localStream) {
                     const videoTrack = localStream.getVideoTracks()[0];
-                    const capabilities = videoTrack.getCapabilities();
+                    const capabilities = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
                     if (capabilities.torch) {
                         isTorchOn = !isTorchOn;
                         await videoTrack.applyConstraints({ advanced: [{ torch: isTorchOn }] });
