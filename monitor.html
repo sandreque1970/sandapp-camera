@@ -53,10 +53,9 @@
         </select>
     </div>
 
-    <!-- Player de Vídeo/Áudio -->
+    <!-- Player de Vídeo -->
     <video id="remoteVideo" autoplay playsinline muted controls></video>
-    <audio id="remoteAudio" autoplay></audio>
-
+    
     <!-- Controles Remotos -->
     <div class="controls-remote" id="remoteControls">
         <button class="btn-ctrl" onclick="sendControl('toggle-camera')">🔄 Alternar Câmera</button>
@@ -72,7 +71,6 @@
 
         const socket = io();
         const remoteVideo = document.getElementById('remoteVideo');
-        const remoteAudio = document.getElementById('remoteAudio');
         const statusDiv = document.getElementById('status');
         const lockScreen = document.getElementById('lockScreen');
         const remoteControls = document.getElementById('remoteControls');
@@ -199,10 +197,6 @@
                 });
             }
 
-            // Exige recebimento explicito de video e audio do transmissor
-            peerConnection.addTransceiver('video', { direction: 'recvonly' });
-            peerConnection.addTransceiver('audio', { direction: 'recvonly' });
-
             peerConnection.ontrack = (event) => {
                 if (event.streams && event.streams[0]) {
                     if (remoteVideo.srcObject !== event.streams[0]) {
@@ -212,7 +206,7 @@
                         const playPromise = remoteVideo.play();
                         if (playPromise !== undefined) {
                             playPromise.then(() => {
-                                console.log("Vídeo e áudio recebidos com sucesso.");
+                                console.log("Vídeo exibido com sucesso!");
                             }).catch(error => {
                                 console.log("Autoplay retido pelo Chrome:", error);
                             });
